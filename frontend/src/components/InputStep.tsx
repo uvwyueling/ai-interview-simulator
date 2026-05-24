@@ -1,0 +1,358 @@
+"use client";
+
+import { useState, useRef } from "react";
+import { useInterview } from "@/context/InterviewContext";
+
+const SAMPLE_RESUME = `张同学  ·  应届硕士
+教育: 计算机科学硕士, 2024
+经历: ByteSpark 实习 (前端工程师, 6个月)
+      Hackday 一等奖 — 实时协作白板
+技能: React, TypeScript, Node.js, Python, 图算法`;
+
+const SAMPLE_JD = `资深前端工程师 · 上海
+我们正在寻找一位对产品有热情的前端工程师, 负责核心编辑器模块。
+要求:
+- 3+ 年 React 经验, 熟悉性能优化
+- 有复杂状态管理 / 协作编辑经验优先
+- 优秀的沟通与跨团队协作能力`;
+
+export default function InputStep() {
+  const { startInterview } = useInterview();
+  const [resume, setResume] = useState("");
+  const [jd, setJd] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [fileName, setFileName] = useState("");
+  const [error, setError] = useState("");
+  const [fileLoading, setFileLoading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const processFile = async (file: File) => {
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    setFileName(file.name);
+    setError("");
+
+    if (ext === "txt") {
+      const text = await file.text();
+      setResume(text.trim());
+      return;
+    }
+
+    if (ext === "docx") {
+      setFileLoading(true);
+      try {
+        const mammoth = await import("mammoth");
+        const buf = await file.arrayBuffer();
+        const result = await mammoth.extractRawText({ arrayBuffer: buf });
+        setResume(result.value.trim());
+      } catch {
+        setError("无法解析 Word 文档，请复制内容后手动粘贴到文本框");
+        setFileName("");
+      } finally {
+        setFileLoading(false);
+      }
+      return;
+    }
+
+    if (ext === "pdf") {
+      setError("暂不支持 PDF 直接解析，请打开 PDF 复制文字后粘贴到文本框");
+      setFileName("");
+      return;
+    }
+
+    setError("不支持此格式，请使用 TXT / DOCX，或直接粘贴文字");
+    setFileName("");
+  };
+
+  const ready = resume.trim().length > 20 && jd.trim().length > 20;
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    const f = e.dataTransfer.files?.[0];
+    if (f) processFile(f);
+  };
+
+  const handleGenerate = async () => {
+    if (!ready || loading) return;
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch("/api/generate-questions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resume, jd }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "生成失败，请重试");
+        return;
+      }
+      startInterview(data.questions, resume, jd);
+    } catch {
+      setError("网络错误，请检查连接后重试");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <section className="fade-up max-w-[1240px] mx-auto px-6 lg:px-10 pt-12 pb-24">
+      <div className="text-center mb-10">
+        <div className="inline-flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.18em] text-indigo-600 mb-3">
+          <span className="w-1 h-1 rounded-full bg-indigo-600"></span> Step 01 /
+          Prepare
+        </div>
+        <h1 className="text-[34px] leading-[1.15] font-semibold tracking-tight text-slate-900">
+          告诉我们 <span className="text-indigo-600">你是谁</span>，
+          <br className="md:hidden" />
+          以及你想成为
+          <span className="text-indigo-600"> 什么样的人</span>。
+        </h1>
+        <p className="mt-3 text-[14px] text-slate-500 max-w-xl mx-auto">
+          上传简历和岗位 JD，AI 将基于你的真实背景，为你生成 5
+          道有针对性的面试问题。
+        </p>
+      </div>
+
+      {error && (
+        <div className="max-w-md mx-auto mb-6 px-4 py-3 bg-rose-50 border border-rose-200 rounded-lg text-[13px] text-rose-700">
+          {error}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto_1fr] gap-6 items-stretch">
+        {/* Resume */}
+        <div className="bg-white rounded-2xl ring-1 ring-slate-200 ring-soft p-5 flex flex-col">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-indigo-50 grid place-items-center text-indigo-600">
+                <svg
+                  viewBox="0 0 24 24"
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+                  <path d="M14 3v6h6" />
+                </svg>
+              </div>
+              <div>
+                <div className="text-[14px] font-medium">你的简历</div>
+                <div className="text-[11px] text-slate-400">
+                  PDF / DOCX / 直接粘贴文本
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                setResume(SAMPLE_RESUME);
+                setFileName("");
+              }}
+              className="text-[11px] text-slate-400 hover:text-indigo-600 transition"
+            >
+              试用示例
+            </button>
+          </div>
+
+          <div
+            onDrop={handleDrop}
+            onDragOver={(e) => e.preventDefault()}
+            className="border border-dashed border-slate-200 rounded-xl px-4 py-3 mb-3 flex items-center justify-between gap-3 hover:border-indigo-400 hover:bg-indigo-50/30 transition cursor-pointer"
+          >
+            <div className="flex items-center gap-2 text-[12px] text-slate-500">
+              {fileLoading ? (
+                <svg className="w-4 h-4 text-indigo-400 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                  <path d="M12 3a9 9 0 1 0 9 9" />
+                </svg>
+              ) : (
+                <svg
+                  viewBox="0 0 24 24"
+                  className="w-4 h-4 text-slate-400"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="17 8 12 3 7 8" />
+                  <line x1="12" y1="3" x2="12" y2="15" />
+                </svg>
+              )}
+              {fileLoading ? (
+                <span className="text-indigo-500">正在解析文件…</span>
+              ) : fileName ? (
+                <span className="text-slate-700 font-medium">{fileName}</span>
+              ) : (
+                "拖拽 TXT / DOCX 到此 · 或"
+              )}
+            </div>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="text-[12px] font-medium text-indigo-600 hover:text-indigo-700"
+            >
+              选择文件
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".txt,.docx"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) processFile(f);
+                e.target.value = "";
+              }}
+            />
+          </div>
+
+          <textarea
+            value={resume}
+            onChange={(e) => setResume(e.target.value)}
+            placeholder="…或者直接在这里粘贴你的简历文本"
+            className="flex-1 min-h-[200px] resize-none text-[13px] leading-[1.7] text-slate-700 placeholder-slate-300 bg-slate-50/60 rounded-xl px-4 py-3 outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500/40 transition"
+          />
+
+          <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400 font-mono">
+            <span>{resume.length} chars</span>
+            <span className={resume.length > 20 ? "text-emerald-600" : ""}>
+              {resume.length > 20 ? "✓ 已识别" : "至少 20 字"}
+            </span>
+          </div>
+        </div>
+
+        {/* Center generate button */}
+        <div className="flex lg:flex-col items-center justify-center gap-4 py-4">
+          <div className="hidden lg:block w-px h-12 bg-gradient-to-b from-transparent to-slate-200"></div>
+          <button
+            onClick={handleGenerate}
+            disabled={!ready || loading}
+            className={`relative w-32 h-32 rounded-full flex flex-col items-center justify-center text-white transition-all
+              ${ready ? "bg-indigo-600 hover:bg-indigo-700 hover:scale-[1.03] ring-soft" : "bg-slate-200 text-slate-400 cursor-not-allowed"}`}
+          >
+            {ready && (
+              <div className="absolute inset-0 rounded-full ring-4 ring-indigo-600/20"></div>
+            )}
+            {loading ? (
+              <>
+                <svg
+                  className="w-7 h-7 animate-spin mb-1"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                >
+                  <path d="M12 3a9 9 0 1 0 9 9" />
+                </svg>
+                <span className="text-[11px] font-medium">生成中</span>
+              </>
+            ) : (
+              <>
+                <svg
+                  viewBox="0 0 24 24"
+                  className="w-7 h-7 mb-1"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="m12 3 1.9 5.8L20 11l-6.1 2.2L12 19l-1.9-5.8L4 11l6.1-2.2z" />
+                </svg>
+                <span className="text-[12px] font-semibold tracking-wide">
+                  生成面试问题
+                </span>
+                <span className="text-[10px] opacity-70 mt-0.5">
+                  {ready ? "已就绪" : "请先填写"}
+                </span>
+              </>
+            )}
+          </button>
+          <div className="hidden lg:block w-px h-12 bg-gradient-to-t from-transparent to-slate-200"></div>
+        </div>
+
+        {/* JD */}
+        <div className="bg-white rounded-2xl ring-1 ring-slate-200 ring-soft p-5 flex flex-col">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-indigo-50 grid place-items-center text-indigo-600">
+                <svg
+                  viewBox="0 0 24 24"
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <rect x="3" y="4" width="18" height="16" rx="2" />
+                  <path d="M16 2v4M8 2v4M3 10h18" />
+                </svg>
+              </div>
+              <div>
+                <div className="text-[14px] font-medium">岗位 JD</div>
+                <div className="text-[11px] text-slate-400">
+                  粘贴目标岗位的职位描述
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => setJd(SAMPLE_JD)}
+              className="text-[11px] text-slate-400 hover:text-indigo-600 transition"
+            >
+              试用示例
+            </button>
+          </div>
+
+          <div className="border border-dashed border-slate-200 rounded-xl px-4 py-3 mb-3 flex items-center gap-2 text-[12px] text-slate-500">
+            <svg
+              viewBox="0 0 24 24"
+              className="w-4 h-4 text-slate-400"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+            </svg>
+            <span>支持粘贴 BOSS / LinkedIn / 拉勾 链接</span>
+          </div>
+
+          <textarea
+            value={jd}
+            onChange={(e) => setJd(e.target.value)}
+            placeholder="粘贴岗位的职责、要求、技术栈…"
+            className="flex-1 min-h-[200px] resize-none text-[13px] leading-[1.7] text-slate-700 placeholder-slate-300 bg-slate-50/60 rounded-xl px-4 py-3 outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500/40 transition"
+          />
+
+          <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400 font-mono">
+            <span>{jd.length} chars</span>
+            <span className={jd.length > 20 ? "text-emerald-600" : ""}>
+              {jd.length > 20 ? "✓ 已识别" : "至少 20 字"}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-10 flex flex-wrap items-center justify-center gap-6 text-[12px] text-slate-400">
+        <div className="flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-indigo-400"></span>{" "}
+          平均生成时长 8 秒
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>{" "}
+          数据仅本地处理，不上传
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>{" "}
+          支持中英文双语面试
+        </div>
+      </div>
+    </section>
+  );
+}

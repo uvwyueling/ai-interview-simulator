@@ -1,0 +1,741 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>AI 面试模拟器</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+  :root {
+    --indigo: #4f46e5;
+    --indigo-soft: #eef2ff;
+  }
+  html, body { font-family: 'Inter', system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+  .font-mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+  /* warm tone overlay on slate-50 */
+  .bg-canvas { background: #fafaf9; background-image: radial-gradient(1200px 600px at 80% -10%, rgba(99,102,241,0.06), transparent 60%), radial-gradient(900px 500px at -10% 110%, rgba(244,114,182,0.04), transparent 60%); }
+  .ring-soft { box-shadow: 0 1px 2px rgba(15,23,42,0.04), 0 8px 24px -12px rgba(15,23,42,0.08); }
+  .stepline { background: linear-gradient(to right, #c7d2fe 0%, #c7d2fe var(--p,0%), #e2e8f0 var(--p,0%)); }
+
+  /* Mic pulse */
+  @keyframes pulse-ring {
+    0%   { transform: scale(1);   opacity: 0.6; }
+    100% { transform: scale(2.4); opacity: 0; }
+  }
+  .pulse-ring { animation: pulse-ring 1.8s cubic-bezier(0.4,0,0.6,1) infinite; }
+
+  @keyframes wave {
+    0%, 100% { transform: scaleY(0.3); }
+    50%      { transform: scaleY(1); }
+  }
+  .wave-bar { animation: wave 0.9s ease-in-out infinite; transform-origin: center; }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .fade-up { animation: fadeUp 0.4s ease-out both; }
+
+  /* radar polygon draw */
+  @keyframes drawRadar {
+    from { stroke-dashoffset: 600; opacity: 0.3; }
+    to   { stroke-dashoffset: 0;   opacity: 1; }
+  }
+  .radar-shape { stroke-dasharray: 600; animation: drawRadar 1.2s ease-out forwards; }
+
+  /* caret blink */
+  @keyframes blink { 50% { opacity: 0; } }
+  .caret { animation: blink 1s steps(2) infinite; }
+
+  textarea::-webkit-scrollbar, .scroll::-webkit-scrollbar { width: 6px; }
+  textarea::-webkit-scrollbar-thumb, .scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+</style>
+</head>
+<body class="bg-canvas text-slate-900 min-h-screen">
+<div id="root"></div>
+
+<script type="text/babel" data-presets="env,react">
+const { useState, useEffect, useRef, useMemo } = React;
+
+/* ---------------- mock data ---------------- */
+const SAMPLE_RESUME = `张同学  ·  应届硕士
+教育: 计算机科学硕士, 2024
+经历: ByteSpark 实习 (前端工程师, 6个月)
+      Hackday 一等奖 — 实时协作白板
+技能: React, TypeScript, Node.js, Python, 图算法`;
+
+const SAMPLE_JD = `资深前端工程师 · 上海
+我们正在寻找一位对产品有热情的前端工程师, 负责核心编辑器模块。
+要求:
+- 3+ 年 React 经验, 熟悉性能优化
+- 有复杂状态管理 / 协作编辑经验优先
+- 优秀的沟通与跨团队协作能力`;
+
+const QUESTIONS = [
+  { tag: '行为面 · 自我认知', q: '请用 2 分钟介绍一下你自己，重点说一下你最近做过的一个项目。' },
+  { tag: '技术深度 · React',  q: '你在 ByteSpark 做过哪些性能优化？请举一个让你印象最深的具体案例。' },
+  { tag: '系统设计 · 协作编辑', q: '如果让你设计一个支持多人实时协作的白板，你会如何处理冲突合并？' },
+  { tag: '情景题 · 跨团队',   q: '如果产品经理临时要求一个会拖延上线的功能，你会怎么沟通？' },
+];
+
+const MOCK_TRANSCRIPT = [
+  '好的，我先做一个简单的自我介绍。',
+  '我是张同学，计算机科学硕士，目前关注前端工程和实时协作方向。',
+  '过去六个月我在 ByteSpark 担任前端实习生，主要负责文档编辑器的性能优化和协作模块。',
+  '其中一个让我印象比较深的项目，是我们把首屏加载时间从 2.8 秒降到了 0.9 秒，',
+  '我主要做了三件事——首先是把同步路由拆分成基于路由的代码分割，',
+  '然后用 IntersectionObserver 实现了图片和富文本块的懒挂载，',
+  '最后是对协作 OT 算法做了批处理，减少 60% 的小操作合并次数。',
+];
+
+const RADAR_DIMS = [
+  { key: '沟通能力',   value: 82 },
+  { key: '技术深度',   value: 76 },
+  { key: '逻辑思维',   value: 88 },
+  { key: '表达清晰度', value: 71 },
+  { key: '岗位匹配度', value: 84 },
+];
+
+const FEEDBACK = {
+  summary: '整体表现稳健，逻辑思维和岗位匹配是亮点；技术深度可以更进一步展开。',
+  strengths: [
+    { title: '结构清晰', detail: '回答采用「背景—动作—结果」三段式，听众容易跟上。' },
+    { title: '数据支撑充分', detail: '提到了 2.8s → 0.9s 这样的具体指标，可信度高。' },
+    { title: '主动展示主导性', detail: '使用「我主要做了三件事」，体现了主导意识。' },
+  ],
+  improvements: [
+    { title: '技术细节可以更深', detail: '提到 OT 批处理时，可以补充冲突合并的策略与权衡。' },
+    { title: '语速偏快', detail: '在 0:45 - 1:10 段，平均语速达到 320 字/分钟，建议刻意停顿。' },
+    { title: '缺少反问', detail: '可以在结尾用一句反问与面试官形成双向交流。' },
+  ],
+};
+
+/* ---------------- shared bits ---------------- */
+function Logo() {
+  return (
+    <div className="flex items-center gap-2.5">
+      <div className="relative w-8 h-8 rounded-lg bg-indigo-600 grid place-items-center ring-soft">
+        <div className="absolute inset-0.5 rounded-md bg-gradient-to-br from-indigo-500 to-indigo-700"></div>
+        <svg viewBox="0 0 24 24" className="relative w-4 h-4 text-white" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 3a4 4 0 0 0-4 4v5a4 4 0 0 0 8 0V7a4 4 0 0 0-4-4z" />
+          <path d="M5 11a7 7 0 0 0 14 0" />
+          <path d="M12 18v3" />
+        </svg>
+      </div>
+      <div className="leading-tight">
+        <div className="text-[15px] font-semibold tracking-tight">Echo Interview</div>
+        <div className="text-[11px] text-slate-500 -mt-0.5">AI Mock Interview · Demo</div>
+      </div>
+    </div>
+  );
+}
+
+function StepBar({ step }) {
+  const steps = ['准备资料', '正式面试', '复盘反馈'];
+  const pct = step === 0 ? 0 : step === 1 ? 50 : 100;
+  return (
+    <div className="flex items-center gap-6">
+      <div className="hidden md:flex items-center gap-3">
+        {steps.map((s, i) => {
+          const active = i === step;
+          const done = i < step;
+          return (
+            <div key={i} className="flex items-center gap-2">
+              <div className={`w-6 h-6 grid place-items-center rounded-full text-[11px] font-semibold transition-all
+                ${done ? 'bg-indigo-600 text-white' : active ? 'bg-indigo-100 text-indigo-700 ring-2 ring-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
+                {done ? '✓' : i + 1}
+              </div>
+              <div className={`text-[13px] ${active ? 'text-slate-900 font-medium' : done ? 'text-slate-500' : 'text-slate-400'}`}>{s}</div>
+              {i < steps.length - 1 && <div className="w-8 h-px bg-slate-200 mx-1"></div>}
+            </div>
+          );
+        })}
+      </div>
+      <div className="md:hidden w-40 h-1.5 rounded-full stepline" style={{'--p': pct + '%'}}></div>
+    </div>
+  );
+}
+
+function Header({ step }) {
+  return (
+    <header className="border-b border-slate-200/70 bg-white/70 backdrop-blur sticky top-0 z-20">
+      <div className="max-w-[1240px] mx-auto px-6 lg:px-10 h-16 flex items-center justify-between">
+        <Logo />
+        <StepBar step={step} />
+        <div className="flex items-center gap-3">
+          <button className="text-[13px] text-slate-500 hover:text-slate-800 transition">教程</button>
+          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-200 to-rose-200 grid place-items-center text-[12px] font-semibold text-slate-700">Z</div>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+/* ---------------- Step 1: Input ---------------- */
+function InputStep({ onGenerate }) {
+  const [resume, setResume] = useState('');
+  const [jd, setJd] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [fileName, setFileName] = useState('');
+  const ready = resume.trim().length > 20 && jd.trim().length > 20;
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    const f = e.dataTransfer.files?.[0];
+    if (f) { setFileName(f.name); setResume(SAMPLE_RESUME); }
+  };
+
+  const handleGenerate = () => {
+    if (!ready) return;
+    setLoading(true);
+    setTimeout(() => { setLoading(false); onGenerate(); }, 1400);
+  };
+
+  return (
+    <section className="fade-up max-w-[1240px] mx-auto px-6 lg:px-10 pt-12 pb-24">
+      <div className="text-center mb-10">
+        <div className="inline-flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.18em] text-indigo-600 mb-3">
+          <span className="w-1 h-1 rounded-full bg-indigo-600"></span> Step 01 / Prepare
+        </div>
+        <h1 className="text-[34px] leading-[1.15] font-semibold tracking-tight text-slate-900">
+          告诉我们 <span className="text-indigo-600">你是谁</span>，<br className="md:hidden"/>以及你想成为<span className="text-indigo-600"> 什么样的人</span>。
+        </h1>
+        <p className="mt-3 text-[14px] text-slate-500 max-w-xl mx-auto">
+          上传简历和岗位 JD，AI 将基于你的真实背景，为你生成 4 道有针对性的面试问题。
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto_1fr] gap-6 items-stretch">
+        {/* Resume */}
+        <div className="bg-white rounded-2xl ring-1 ring-slate-200 ring-soft p-5 flex flex-col">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-indigo-50 grid place-items-center text-indigo-600">
+                <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></svg>
+              </div>
+              <div>
+                <div className="text-[14px] font-medium">你的简历</div>
+                <div className="text-[11px] text-slate-400">PDF / DOCX / 直接粘贴文本</div>
+              </div>
+            </div>
+            <button onClick={() => { setResume(SAMPLE_RESUME); setFileName(''); }} className="text-[11px] text-slate-400 hover:text-indigo-600 transition">试用示例</button>
+          </div>
+
+          <div
+            onDrop={handleDrop}
+            onDragOver={(e)=>e.preventDefault()}
+            className="border border-dashed border-slate-200 rounded-xl px-4 py-3 mb-3 flex items-center justify-between gap-3 hover:border-indigo-400 hover:bg-indigo-50/30 transition cursor-pointer">
+            <div className="flex items-center gap-2 text-[12px] text-slate-500">
+              <svg viewBox="0 0 24 24" className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              {fileName ? <span className="text-slate-700 font-medium">{fileName}</span> : '拖拽文件到此 · 或'}
+            </div>
+            <button className="text-[12px] font-medium text-indigo-600 hover:text-indigo-700">选择文件</button>
+          </div>
+
+          <textarea
+            value={resume}
+            onChange={(e) => setResume(e.target.value)}
+            placeholder="…或者直接在这里粘贴你的简历文本"
+            className="flex-1 min-h-[200px] resize-none text-[13px] leading-[1.7] text-slate-700 placeholder-slate-300 bg-slate-50/60 rounded-xl px-4 py-3 outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500/40 transition" />
+
+          <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400 font-mono">
+            <span>{resume.length} chars</span>
+            <span className={resume.length > 20 ? 'text-emerald-600' : ''}>{resume.length > 20 ? '✓ 已识别' : '至少 20 字'}</span>
+          </div>
+        </div>
+
+        {/* Center generate button */}
+        <div className="flex lg:flex-col items-center justify-center gap-4 py-4">
+          <div className="hidden lg:block w-px h-12 bg-gradient-to-b from-transparent to-slate-200"></div>
+          <button
+            onClick={handleGenerate}
+            disabled={!ready || loading}
+            className={`relative group w-32 h-32 rounded-full flex flex-col items-center justify-center text-white transition-all
+              ${ready ? 'bg-indigo-600 hover:bg-indigo-700 hover:scale-[1.03] ring-soft' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}>
+            {ready && <div className="absolute inset-0 rounded-full ring-4 ring-indigo-600/20"></div>}
+            {loading ? (
+              <>
+                <svg className="w-7 h-7 animate-spin mb-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M12 3a9 9 0 1 0 9 9"/></svg>
+                <span className="text-[11px] font-medium">生成中</span>
+              </>
+            ) : (
+              <>
+                <svg viewBox="0 0 24 24" className="w-7 h-7 mb-1" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3 1.9 5.8L20 11l-6.1 2.2L12 19l-1.9-5.8L4 11l6.1-2.2z"/></svg>
+                <span className="text-[12px] font-semibold tracking-wide">生成面试问题</span>
+                <span className="text-[10px] opacity-70 mt-0.5">{ready ? '已就绪' : '请先填写'}</span>
+              </>
+            )}
+          </button>
+          <div className="hidden lg:block w-px h-12 bg-gradient-to-t from-transparent to-slate-200"></div>
+        </div>
+
+        {/* JD */}
+        <div className="bg-white rounded-2xl ring-1 ring-slate-200 ring-soft p-5 flex flex-col">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-indigo-50 grid place-items-center text-indigo-600">
+                <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+              </div>
+              <div>
+                <div className="text-[14px] font-medium">岗位 JD</div>
+                <div className="text-[11px] text-slate-400">粘贴目标岗位的职位描述</div>
+              </div>
+            </div>
+            <button onClick={() => setJd(SAMPLE_JD)} className="text-[11px] text-slate-400 hover:text-indigo-600 transition">试用示例</button>
+          </div>
+
+          <div className="border border-dashed border-slate-200 rounded-xl px-4 py-3 mb-3 flex items-center gap-2 text-[12px] text-slate-500">
+            <svg viewBox="0 0 24 24" className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+            <span>支持粘贴 BOSS / LinkedIn / 拉勾 链接</span>
+            <input className="flex-1 bg-transparent outline-none text-[12px] placeholder-slate-300" placeholder="https://..." />
+          </div>
+
+          <textarea
+            value={jd}
+            onChange={(e) => setJd(e.target.value)}
+            placeholder="粘贴岗位的职责、要求、技术栈…"
+            className="flex-1 min-h-[200px] resize-none text-[13px] leading-[1.7] text-slate-700 placeholder-slate-300 bg-slate-50/60 rounded-xl px-4 py-3 outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500/40 transition" />
+
+          <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400 font-mono">
+            <span>{jd.length} chars</span>
+            <span className={jd.length > 20 ? 'text-emerald-600' : ''}>{jd.length > 20 ? '✓ 已识别' : '至少 20 字'}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* hint row */}
+      <div className="mt-10 flex flex-wrap items-center justify-center gap-6 text-[12px] text-slate-400">
+        <div className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-indigo-400"></span> 平均生成时长 8 秒</div>
+        <div className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> 数据仅本地处理，不上传</div>
+        <div className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span> 支持中英文双语面试</div>
+      </div>
+    </section>
+  );
+}
+
+/* ---------------- Step 2: Interview ---------------- */
+function WaveBars({ active }) {
+  return (
+    <div className="flex items-center justify-center gap-1 h-8">
+      {[0,1,2,3,4,5,6,7,8,9,10,11,12].map(i => (
+        <div key={i}
+          className={`w-[3px] rounded-full ${active ? 'wave-bar bg-indigo-500' : 'bg-slate-200'}`}
+          style={{
+            height: `${active ? 28 : 6}px`,
+            animationDelay: `${i * 0.07}s`,
+          }}/>
+      ))}
+    </div>
+  );
+}
+
+function InterviewStep({ onFinish }) {
+  const [qIdx, setQIdx] = useState(0);
+  const [recording, setRecording] = useState(false);
+  const [transcriptIdx, setTranscriptIdx] = useState(0);
+  const [seconds, setSeconds] = useState(0);
+  const timerRef = useRef(null);
+  const textRef = useRef(null);
+
+  const transcript = MOCK_TRANSCRIPT.slice(0, transcriptIdx).join(' ');
+  const partial = recording && transcriptIdx < MOCK_TRANSCRIPT.length ? MOCK_TRANSCRIPT[transcriptIdx] : '';
+
+  useEffect(() => {
+    if (!recording) return;
+    timerRef.current = setInterval(() => setSeconds(s => s + 1), 1000);
+    const speechT = setInterval(() => {
+      setTranscriptIdx(i => Math.min(i + 1, MOCK_TRANSCRIPT.length));
+    }, 1600);
+    return () => { clearInterval(timerRef.current); clearInterval(speechT); };
+  }, [recording]);
+
+  useEffect(() => {
+    if (textRef.current) textRef.current.scrollTop = textRef.current.scrollHeight;
+  }, [transcriptIdx, recording]);
+
+  const toggleRec = () => setRecording(r => !r);
+  const skipQ = () => {
+    if (qIdx < QUESTIONS.length - 1) {
+      setQIdx(i => i + 1);
+      setTranscriptIdx(0);
+      setSeconds(0);
+      setRecording(false);
+    } else {
+      onFinish();
+    }
+  };
+
+  const fmt = (s) => `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+  const q = QUESTIONS[qIdx];
+  const thinkRing = Math.min(seconds / 120, 1); // 2 min suggested
+
+  return (
+    <section className="fade-up max-w-[1240px] mx-auto px-6 lg:px-10 pt-10 pb-16">
+      {/* Question header */}
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3 text-[12px]">
+          <span className="px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 font-medium">{q.tag}</span>
+          <span className="text-slate-400">问题 {qIdx + 1} / {QUESTIONS.length}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          {QUESTIONS.map((_, i) => (
+            <div key={i} className={`h-1 rounded-full transition-all ${i === qIdx ? 'w-8 bg-indigo-600' : i < qIdx ? 'w-4 bg-indigo-300' : 'w-4 bg-slate-200'}`}></div>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-[1.1fr_1fr] gap-6">
+        {/* Left: Question + mic */}
+        <div className="bg-white rounded-2xl ring-1 ring-slate-200 ring-soft p-8 flex flex-col">
+          <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400 mb-3">面试官</div>
+          <h2 className="text-[24px] leading-[1.5] font-medium text-slate-900 tracking-tight">
+            "{q.q}"
+          </h2>
+          <div className="mt-2 flex items-center gap-3 text-[12px] text-slate-400">
+            <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            建议时长 90 - 120 秒
+          </div>
+
+          {/* Mic area */}
+          <div className="flex-1 mt-10 flex flex-col items-center justify-center">
+            <div className="relative">
+              {recording && <>
+                <div className="absolute inset-0 rounded-full bg-indigo-500 pulse-ring"></div>
+                <div className="absolute inset-0 rounded-full bg-indigo-500 pulse-ring" style={{animationDelay:'0.6s'}}></div>
+              </>}
+              <button
+                onClick={toggleRec}
+                className={`relative w-32 h-32 rounded-full grid place-items-center text-white transition-all ring-soft
+                  ${recording ? 'bg-rose-500 hover:bg-rose-600' : 'bg-indigo-600 hover:bg-indigo-700 hover:scale-105'}`}>
+                {recording ? (
+                  <div className="w-8 h-8 rounded-md bg-white"></div>
+                ) : (
+                  <svg viewBox="0 0 24 24" className="w-12 h-12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="9" y="3" width="6" height="12" rx="3"/>
+                    <path d="M5 11a7 7 0 0 0 14 0"/>
+                    <path d="M12 18v3"/>
+                  </svg>
+                )}
+              </button>
+            </div>
+            <div className="mt-6 text-[13px] text-slate-500">
+              {recording ? '正在录音 · 再次点击结束' : '点击麦克风开始作答'}
+            </div>
+
+            <div className="mt-4">
+              <WaveBars active={recording} />
+            </div>
+
+            {/* Timer */}
+            <div className="mt-6 flex items-center gap-6">
+              <div className="flex items-center gap-2">
+                <div className="relative w-10 h-10">
+                  <svg viewBox="0 0 36 36" className="w-10 h-10 -rotate-90">
+                    <circle cx="18" cy="18" r="15" fill="none" stroke="#e2e8f0" strokeWidth="3"/>
+                    <circle cx="18" cy="18" r="15" fill="none" stroke="#4f46e5" strokeWidth="3" strokeLinecap="round"
+                      strokeDasharray={`${thinkRing * 94} 94`} />
+                  </svg>
+                  <div className="absolute inset-0 grid place-items-center">
+                    <div className={`w-1.5 h-1.5 rounded-full ${recording ? 'bg-rose-500 animate-pulse' : 'bg-slate-300'}`}></div>
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[11px] text-slate-400 uppercase tracking-wide">用时</div>
+                  <div className="text-[18px] font-mono font-medium tabular-nums text-slate-900">{fmt(seconds)}</div>
+                </div>
+              </div>
+              <div className="w-px h-10 bg-slate-200"></div>
+              <div>
+                <div className="text-[11px] text-slate-400 uppercase tracking-wide">思考时间</div>
+                <div className="text-[18px] font-mono font-medium tabular-nums text-slate-900">
+                  {seconds < 15 ? <span className="text-emerald-600">充足</span> : seconds < 90 ? <span>正常</span> : <span className="text-amber-600">建议收尾</span>}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-8 pt-6 border-t border-slate-100 flex items-center justify-between">
+            <button className="text-[13px] text-slate-500 hover:text-slate-900 transition flex items-center gap-1">
+              <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9"/><polyline points="3 4 3 12 11 12"/></svg>
+              重新作答
+            </button>
+            <button onClick={skipQ} className="text-[13px] font-medium px-4 py-2 rounded-lg bg-slate-900 text-white hover:bg-slate-800 transition flex items-center gap-1.5">
+              {qIdx < QUESTIONS.length - 1 ? '下一题' : '查看反馈'}
+              <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Right: Live transcript */}
+        <div className="bg-white rounded-2xl ring-1 ring-slate-200 ring-soft p-6 flex flex-col">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <div className={`w-2 h-2 rounded-full ${recording ? 'bg-rose-500 animate-pulse' : 'bg-slate-300'}`}></div>
+              <div className="text-[13px] font-medium">实时语音转文字</div>
+            </div>
+            <div className="text-[11px] text-slate-400 font-mono">zh-CN · auto</div>
+          </div>
+
+          <div ref={textRef} className="flex-1 scroll overflow-auto bg-slate-50/60 rounded-xl p-5 text-[14px] leading-[1.85] text-slate-700 min-h-[360px] max-h-[460px]">
+            {transcript === '' && !partial && (
+              <div className="text-slate-300 text-[13px] flex items-center gap-2 h-full justify-center flex-col">
+                <svg viewBox="0 0 24 24" className="w-8 h-8 text-slate-200" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+                等待你开始作答…
+              </div>
+            )}
+            {transcript && <span>{transcript} </span>}
+            {recording && partial && <span className="text-indigo-600 bg-indigo-50 rounded px-0.5">{partial}<span className="caret">|</span></span>}
+          </div>
+
+          {/* meta footer */}
+          <div className="mt-4 grid grid-cols-3 gap-3 text-center">
+            <div className="bg-slate-50/60 rounded-lg py-2.5">
+              <div className="text-[10px] text-slate-400 uppercase tracking-wide">字数</div>
+              <div className="text-[15px] font-mono font-medium tabular-nums text-slate-800">{(transcript + partial).replace(/\s/g,'').length}</div>
+            </div>
+            <div className="bg-slate-50/60 rounded-lg py-2.5">
+              <div className="text-[10px] text-slate-400 uppercase tracking-wide">语速</div>
+              <div className="text-[15px] font-mono font-medium tabular-nums text-slate-800">{seconds > 0 ? Math.round((transcript + partial).replace(/\s/g,'').length / seconds * 60) : 0}<span className="text-[10px] text-slate-400 ml-0.5">字/分</span></div>
+            </div>
+            <div className="bg-slate-50/60 rounded-lg py-2.5">
+              <div className="text-[10px] text-slate-400 uppercase tracking-wide">填充词</div>
+              <div className="text-[15px] font-mono font-medium tabular-nums text-slate-800">3</div>
+            </div>
+          </div>
+
+          <div className="mt-4 flex items-start gap-2 px-3 py-2.5 bg-indigo-50/60 rounded-lg">
+            <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 text-indigo-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+            <div className="text-[12px] text-indigo-900/70 leading-relaxed">提示：使用 <b>STAR</b> 结构（Situation - Task - Action - Result）回答行为面问题。</div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ---------------- Step 3: Feedback ---------------- */
+function RadarChart({ dims }) {
+  const size = 360;
+  const cx = size / 2, cy = size / 2;
+  const radius = 130;
+  const n = dims.length;
+
+  const point = (angle, r) => {
+    const a = angle - Math.PI / 2;
+    return [cx + Math.cos(a) * r, cy + Math.sin(a) * r];
+  };
+
+  // gridlines
+  const levels = [0.25, 0.5, 0.75, 1];
+  const angles = dims.map((_, i) => (i / n) * Math.PI * 2);
+
+  const polygonAt = (r) => angles.map(a => point(a, r).join(',')).join(' ');
+  const valuePolygon = dims.map((d, i) => point(angles[i], radius * d.value / 100).join(',')).join(' ');
+
+  return (
+    <svg viewBox={`0 0 ${size} ${size}`} className="w-full max-w-[400px]">
+      <defs>
+        <radialGradient id="radarFill" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="#6366f1" stopOpacity="0.35"/>
+          <stop offset="100%" stopColor="#6366f1" stopOpacity="0.12"/>
+        </radialGradient>
+      </defs>
+
+      {/* grid */}
+      {levels.map((l, i) => (
+        <polygon key={i} points={polygonAt(radius * l)} fill="none"
+          stroke="#e2e8f0" strokeWidth={i === levels.length - 1 ? 1.2 : 0.8}
+          strokeDasharray={i === levels.length - 1 ? '' : '2 3'} />
+      ))}
+
+      {/* spokes */}
+      {angles.map((a, i) => {
+        const [x, y] = point(a, radius);
+        return <line key={i} x1={cx} y1={cy} x2={x} y2={y} stroke="#e2e8f0" strokeWidth="0.8" />;
+      })}
+
+      {/* value shape */}
+      <polygon points={valuePolygon} fill="url(#radarFill)" stroke="#4f46e5" strokeWidth="1.8" strokeLinejoin="round"
+        className="radar-shape" />
+
+      {/* value points */}
+      {dims.map((d, i) => {
+        const [x, y] = point(angles[i], radius * d.value / 100);
+        return <circle key={i} cx={x} cy={y} r="4" fill="white" stroke="#4f46e5" strokeWidth="2" />;
+      })}
+
+      {/* labels */}
+      {dims.map((d, i) => {
+        const [x, y] = point(angles[i], radius + 28);
+        return (
+          <g key={i}>
+            <text x={x} y={y - 4} textAnchor="middle" className="fill-slate-700" style={{fontSize: 13, fontWeight: 500}}>{d.key}</text>
+            <text x={x} y={y + 11} textAnchor="middle" className="fill-indigo-600" style={{fontSize: 11, fontFamily: 'JetBrains Mono', fontWeight: 600}}>{d.value}</text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+function FeedbackStep({ onRestart }) {
+  const avg = useMemo(() => Math.round(RADAR_DIMS.reduce((s, d) => s + d.value, 0) / RADAR_DIMS.length), []);
+  const grade = avg >= 85 ? 'A' : avg >= 75 ? 'B+' : avg >= 65 ? 'B' : 'C';
+
+  return (
+    <section className="fade-up max-w-[1240px] mx-auto px-6 lg:px-10 pt-10 pb-20">
+      {/* Top summary */}
+      <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-8">
+        <div>
+          <div className="text-[11px] uppercase tracking-[0.18em] text-indigo-600 mb-2">Step 03 / Feedback</div>
+          <h2 className="text-[30px] leading-tight font-semibold tracking-tight text-slate-900">本次面试复盘</h2>
+          <p className="mt-2 text-[14px] text-slate-500 max-w-xl">{FEEDBACK.summary}</p>
+        </div>
+        <div className="flex items-center gap-6">
+          <div className="text-right">
+            <div className="text-[11px] uppercase tracking-wider text-slate-400">总分</div>
+            <div className="flex items-baseline gap-2">
+              <div className="text-[42px] font-semibold leading-none tabular-nums tracking-tight text-slate-900">{avg}</div>
+              <div className="text-[16px] text-slate-400 font-mono">/ 100</div>
+            </div>
+          </div>
+          <div className="w-px h-12 bg-slate-200"></div>
+          <div className="text-center">
+            <div className="text-[11px] uppercase tracking-wider text-slate-400">评级</div>
+            <div className="w-12 h-12 rounded-xl bg-indigo-600 text-white grid place-items-center text-[22px] font-semibold mt-1">{grade}</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Left: Text feedback */}
+        <div className="space-y-4">
+          {/* Strengths */}
+          <div className="bg-white rounded-2xl ring-1 ring-slate-200 ring-soft p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 grid place-items-center">
+                  <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                </div>
+                <div className="text-[14px] font-semibold">优点</div>
+              </div>
+              <div className="text-[11px] text-slate-400 font-mono">3 ITEMS</div>
+            </div>
+            <ul className="space-y-3">
+              {FEEDBACK.strengths.map((s, i) => (
+                <li key={i} className="flex gap-3">
+                  <div className="text-[11px] font-mono font-semibold text-emerald-600 mt-1 w-5 shrink-0">0{i+1}</div>
+                  <div>
+                    <div className="text-[14px] font-medium text-slate-900">{s.title}</div>
+                    <div className="text-[13px] leading-relaxed text-slate-500 mt-0.5">{s.detail}</div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Improvements */}
+          <div className="bg-white rounded-2xl ring-1 ring-slate-200 ring-soft p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-amber-50 text-amber-600 grid place-items-center">
+                  <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2 2 22h20z"/><line x1="12" y1="9" x2="12" y2="14"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                </div>
+                <div className="text-[14px] font-semibold">改进点</div>
+              </div>
+              <div className="text-[11px] text-slate-400 font-mono">3 ITEMS</div>
+            </div>
+            <ul className="space-y-3">
+              {FEEDBACK.improvements.map((s, i) => (
+                <li key={i} className="flex gap-3">
+                  <div className="text-[11px] font-mono font-semibold text-amber-600 mt-1 w-5 shrink-0">0{i+1}</div>
+                  <div>
+                    <div className="text-[14px] font-medium text-slate-900">{s.title}</div>
+                    <div className="text-[13px] leading-relaxed text-slate-500 mt-0.5">{s.detail}</div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+
+        {/* Right: Radar */}
+        <div className="bg-white rounded-2xl ring-1 ring-slate-200 ring-soft p-6 flex flex-col">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-[14px] font-semibold">能力雷达</div>
+            <div className="flex items-center gap-3 text-[11px] text-slate-400">
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-indigo-600"></span>本次表现</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-slate-200"></span>满分基准</span>
+            </div>
+          </div>
+          <div className="flex-1 flex items-center justify-center -my-4">
+            <RadarChart dims={RADAR_DIMS} />
+          </div>
+          <div className="grid grid-cols-5 gap-2 pt-2 border-t border-slate-100">
+            {RADAR_DIMS.map((d, i) => (
+              <div key={i} className="text-center">
+                <div className="text-[10px] text-slate-400 truncate">{d.key}</div>
+                <div className="text-[15px] font-mono font-semibold tabular-nums text-slate-900 mt-0.5">{d.value}</div>
+                <div className="mt-1 h-1 bg-slate-100 rounded-full overflow-hidden">
+                  <div className="h-full bg-indigo-500 rounded-full" style={{width: d.value + '%'}}></div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Action row */}
+      <div className="mt-8 flex flex-col sm:flex-row items-center justify-between gap-4 bg-gradient-to-r from-indigo-50 via-indigo-50/40 to-transparent rounded-2xl px-6 py-5 ring-1 ring-indigo-100">
+        <div>
+          <div className="text-[15px] font-medium text-slate-900">想再练一次？</div>
+          <div className="text-[12px] text-slate-500 mt-0.5">基于本次反馈，AI 会针对你的薄弱环节出更有针对性的题目。</div>
+        </div>
+        <div className="flex items-center gap-3">
+          <button className="text-[13px] px-4 py-2 rounded-lg text-slate-700 hover:bg-white transition">导出报告 PDF</button>
+          <button onClick={onRestart} className="text-[13px] font-medium px-5 py-2.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition flex items-center gap-1.5">
+            开启新一轮面试
+            <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ---------------- App ---------------- */
+function App() {
+  const [step, setStep] = useState(0);
+
+  return (
+    <div className="min-h-screen">
+      <Header step={step} />
+      {step === 0 && <InputStep onGenerate={() => setStep(1)} />}
+      {step === 1 && <InterviewStep onFinish={() => setStep(2)} />}
+      {step === 2 && <FeedbackStep onRestart={() => setStep(0)} />}
+
+      {/* tiny floating step jumper for demo */}
+      <div className="fixed bottom-5 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur ring-1 ring-slate-200 ring-soft rounded-full px-2 py-1.5 flex items-center gap-1 text-[11px] z-30">
+        <span className="px-2 text-slate-400 font-mono">DEMO</span>
+        {['输入', '面试', '反馈'].map((s, i) => (
+          <button key={i} onClick={() => setStep(i)}
+            className={`px-3 py-1 rounded-full transition ${step === i ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-100'}`}>
+            {s}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>

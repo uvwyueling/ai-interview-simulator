@@ -6,3 +6,6 @@
 # 临时文件
 *.tmp
 *.swp
+
+# 密钥
+.env*.local

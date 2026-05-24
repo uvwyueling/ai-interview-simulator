@@ -1,0 +1,208 @@
+import { NextRequest, NextResponse } from "next/server";
+import Anthropic from "@anthropic-ai/sdk";
+import { z } from "zod";
+
+// ─── Schemas ──────────────────────────────────────────────────────────────────
+
+const RequestSchema = z.object({
+  question: z.string().min(1, "问题不能为空"),
+  transcript: z.string().min(1, "回答内容不能为空"),
+  thinkingTime: z.number().min(0, "思考时间不能为负数"),
+  speakingTime: z.number().min(0, "回答时间不能为负数"),
+  resume: z.string().min(1, "简历不能为空"),
+});
+
+const FeedbackSchema = z.object({
+  overallScore: z.number().int().min(0).max(100),
+  dimensions: z.object({
+    communication: z.number().int().min(0).max(100),
+    technicalDepth: z.number().int().min(0).max(100),
+    logicalThinking: z.number().int().min(0).max(100),
+    clarity: z.number().int().min(0).max(100),
+    jobFit: z.number().int().min(0).max(100),
+  }),
+  strengths: z.array(z.string().min(1)).min(1).max(5),
+  improvements: z.array(z.string().min(1)).min(1).max(5),
+  modelAnswer: z.string().min(1),
+  thinkingTimeFeedback: z.string().min(1),
+});
+
+export type Feedback = z.infer<typeof FeedbackSchema>;
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function thinkingTimeGuidance(ms: number): string {
+  const s = ms / 1000;
+  if (s < 3) {
+    return "思考时间不足 3 秒，说明候选人可能过于仓促。请在 thinkingTimeFeedback 中温和地指出，面试时可以先说「让我想一下」争取思考空间，不必急于开口。";
+  }
+  if (s > 15) {
+    return `思考时间长达 ${s.toFixed(0)} 秒，超过 15 秒。请在 thinkingTimeFeedback 中建议候选人可以边整理思路边开口，用「我先从…说起」这类开场白引导面试官等待，避免长时间沉默。`;
+  }
+  return `思考时间 ${s.toFixed(1)} 秒，节奏良好。请在 thinkingTimeFeedback 中给予积极肯定。`;
+}
+
+function buildSystemPrompt(thinkingTimeMs: number, speakingTimeMs: number): string {
+  const speakingSec = (speakingTimeMs / 1000).toFixed(0);
+  return `你是一位拥有 10 年经验的资深技术面试官，正在对候选人的面试回答进行专业评估。
+
+【计时数据】
+- ${thinkingTimeGuidance(thinkingTimeMs)}
+- 候选人实际回答时长：${speakingSec} 秒
+
+【评分维度定义】
+- communication（沟通能力）：表达流畅性、语言组织能力
+- technicalDepth（技术深度）：技术细节充分程度、是否展现深度思考
+- logicalThinking（逻辑思维）：回答结构合理性、推理严谨性
+- clarity（表达清晰度）：重点是否突出、是否简洁有力
+- jobFit（岗位匹配度）：回答是否契合岗位核心要求
+
+【modelAnswer 要求】
+必须结合候选人简历中的真实经历来定制，不允许给通用答案。
+展示如何将简历中的具体项目/成就套入 STAR 结构（情境-任务-行动-结果）来回答该问题。
+
+【输出格式】
+严格输出以下 JSON，不要包含任何其他文字、注释或 markdown 标记：
+{
+  "overallScore": <0-100 整数>,
+  "dimensions": {
+    "communication": <0-100 整数>,
+    "technicalDepth": <0-100 整数>,
+    "logicalThinking": <0-100 整数>,
+    "clarity": <0-100 整数>,
+    "jobFit": <0-100 整数>
+  },
+  "strengths": ["具体优点1", "具体优点2"],
+  "improvements": ["具体改进建议1", "具体改进建议2"],
+  "modelAnswer": "结合候选人简历经历的定制示范回答...",
+  "thinkingTimeFeedback": "关于思考节奏的个性化反馈..."
+}`;
+}
+
+// ─── Core LLM call with retry ─────────────────────────────────────────────────
+
+const client = new Anthropic();
+
+async function callWithRetry(
+  systemPrompt: string,
+  userMessage: string,
+  maxAttempts: number = 3
+): Promise<Feedback> {
+  let lastError: Error = new Error("未知错误");
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const response = await client.messages.create({
+        model: "claude-haiku-4-5",
+        max_tokens: 3000,
+        system: systemPrompt,
+        messages: [{ role: "user", content: userMessage }],
+      });
+
+      if (response.stop_reason === "max_tokens") {
+        throw new Error("响应被截断（输出超出长度限制），请重试");
+      }
+
+      const textBlock = response.content.find((b) => b.type === "text");
+      if (!textBlock || textBlock.type !== "text") {
+        throw new Error("响应中没有文本内容");
+      }
+
+      const jsonMatch = textBlock.text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        console.error("[generate-feedback] no JSON found in:", textBlock.text.slice(0, 300));
+        throw new Error("响应中未找到 JSON 结构");
+      }
+
+      const parsed: unknown = JSON.parse(jsonMatch[0]);
+      const validated = FeedbackSchema.safeParse(parsed);
+
+      if (!validated.success) {
+        const issues = validated.error.issues.map((i) => i.message).join(", ");
+        throw new Error(`JSON 结构不符合预期：${issues}`);
+      }
+
+      return validated.data;
+    } catch (err) {
+      // API-level errors and auth config errors should not be retried
+      if (err instanceof Anthropic.APIError) throw err;
+
+      lastError = err instanceof Error ? err : new Error(String(err));
+      console.error(`[generate-feedback] attempt ${attempt}/${maxAttempts} failed:`, lastError.message);
+
+      const msg = lastError.message.toLowerCase();
+      if (msg.includes("authentication") || msg.includes("apikey") || msg.includes("authtoken")) {
+        throw lastError;
+      }
+
+      if (attempt < maxAttempts) {
+        await new Promise((r) => setTimeout(r, 600 * attempt));
+      }
+    }
+  }
+
+  throw lastError;
+}
+
+// ─── Route handler ────────────────────────────────────────────────────────────
+
+export async function POST(request: NextRequest): Promise<NextResponse> {
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json(
+      { error: "请求格式错误，请发送有效的 JSON 数据" },
+      { status: 400 }
+    );
+  }
+
+  const parseResult = RequestSchema.safeParse(body);
+  if (!parseResult.success) {
+    const messages = parseResult.error.issues.map((e) => e.message).join("; ");
+    return NextResponse.json({ error: messages }, { status: 400 });
+  }
+
+  const { question, transcript, thinkingTime, speakingTime, resume } =
+    parseResult.data;
+
+  const systemPrompt = buildSystemPrompt(thinkingTime, speakingTime);
+  const userMessage = `【面试问题】\n${question}\n\n【候选人简历】\n${resume}\n\n【候选人回答】\n${transcript}`;
+
+  try {
+    const feedback = await callWithRetry(systemPrompt, userMessage);
+    return NextResponse.json(feedback);
+  } catch (err) {
+    console.error("[generate-feedback] final error:", err);
+
+    if (err instanceof Anthropic.RateLimitError) {
+      return NextResponse.json(
+        { error: "请求过于频繁，请稍后重试" },
+        { status: 429 }
+      );
+    }
+    if (err instanceof Anthropic.AuthenticationError) {
+      return NextResponse.json(
+        { error: "AI 服务配置错误，请联系管理员" },
+        { status: 500 }
+      );
+    }
+    if (err instanceof Anthropic.APIError) {
+      return NextResponse.json(
+        { error: "AI 服务暂时不可用，请稍后重试" },
+        { status: 502 }
+      );
+    }
+    const msg = err instanceof Error ? err.message.toLowerCase() : "";
+    if (msg.includes("authentication") || msg.includes("apikey") || msg.includes("authtoken")) {
+      return NextResponse.json(
+        { error: "AI 服务配置错误，请联系管理员" },
+        { status: 500 }
+      );
+    }
+    return NextResponse.json(
+      { error: "生成反馈时发生错误，请稍后重试" },
+      { status: 500 }
+    );
+  }
+}
