@@ -2,6 +2,7 @@
 
 import { useState, useRef } from "react";
 import { useInterview } from "@/context/InterviewContext";
+import type { Question } from "@/types/interview";
 
 const SAMPLE_RESUME = `张同学  ·  应届硕士
 教育: 计算机科学硕士, 2024
@@ -15,6 +16,49 @@ const SAMPLE_JD = `资深前端工程师 · 上海
 - 3+ 年 React 经验, 熟悉性能优化
 - 有复杂状态管理 / 协作编辑经验优先
 - 优秀的沟通与跨团队协作能力`;
+
+// ── Demo preset questions (shown when both inputs are sample data) ────────────
+// Prefixes Q/数字/冒号 already stripped per product requirement.
+
+const DEMO_POOL: Omit<Question, "id">[] = [
+  {
+    text: "在 Hackday 实时协作白板项目中，你们如何处理多用户并发编辑时的冲突解决？具体采用了什么算法（如 OT、CRDT），为什么选择这个方案而不是其他方案？",
+    category: "项目经历",
+    difficulty: "hard",
+  },
+  {
+    text: "你提到掌握图算法，请结合实际项目经验说明如何使用图论知识优化白板中元素之间的关系处理或渲染性能？",
+    category: "技术深度",
+    difficulty: "hard",
+  },
+  {
+    text: "ByteSpark 实习期间，你在 React 项目中遇到过最复杂的性能问题是什么？从识别问题、分析瓶颈到最终优化，整个过程是怎样的？性能提升的数据是多少？",
+    category: "项目经历",
+    difficulty: "medium",
+  },
+  {
+    text: "对于一个复杂的编辑器产品，你会如何选择和设计状态管理方案？请对比 Redux、Zustand、MobX 等方案在协作编辑场景下的优劣，以及你会如何架构来支持高频的状态更新和撤销/重做功能。",
+    category: "系统设计",
+    difficulty: "hard",
+  },
+  {
+    text: "作为应届硕士直接应聘资深岗位，你认为自己在经验上的差距主要在哪些方面？你计划如何在短期内弥补这些差距，同时如何与资深工程师有效协作？",
+    category: "行为面试",
+    difficulty: "medium",
+  },
+  {
+    text: "假设要开发一个在线代码编辑器的核心编辑模块，需要支持实时多人协作、高性能渲染和复杂的撤销/重做栈。请说明你会如何设计整体架构，状态管理方案选择，以及前后端如何协作。",
+    category: "系统设计",
+    difficulty: "hard",
+  },
+];
+
+function pickFive(pool: Omit<Question, "id">[]): Question[] {
+  return [...pool]
+    .sort(() => Math.random() - 0.5)
+    .slice(0, 5)
+    .map((q, i) => ({ ...q, id: `q${i + 1}` }));
+}
 
 export default function InputStep() {
   const { startInterview } = useInterview();
@@ -73,8 +117,16 @@ export default function InputStep() {
 
   const handleGenerate = async () => {
     if (!ready || loading) return;
-    setLoading(true);
     setError("");
+
+    // Demo fast-path: both inputs are unmodified sample data → skip API call
+    if (resume === SAMPLE_RESUME && jd === SAMPLE_JD) {
+      startInterview(pickFive(DEMO_POOL), resume, jd);
+      return;
+    }
+
+    // Normal path: call the API
+    setLoading(true);
     try {
       const res = await fetch("/api/generate-questions", {
         method: "POST",

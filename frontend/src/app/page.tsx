@@ -5,10 +5,52 @@ import Header from "@/components/Header";
 import InputStep from "@/components/InputStep";
 import InterviewStep from "@/components/InterviewStep";
 import FeedbackStep from "@/components/FeedbackStep";
+import type { Question } from "@/types/interview";
 
-const STEP_NUM = { input: 0, interview: 1, feedback: 2 } as const;
-const STEP_LABELS = ["输入", "面试", "反馈"] as const;
-const STEP_KEYS = ["input", "interview", "feedback"] as const;
+// ── Demo mock data (used when jumping to interview/feedback without real data) ──
+
+const DEMO_RESUME = `张同学 · 应届硕士
+教育：计算机科学硕士，2024
+经历：ByteSpark 实习（前端工程师，6 个月）· Hackday 一等奖 — 实时协作白板
+技能：React、TypeScript、Node.js、Python、图算法`;
+
+const DEMO_JD = `资深前端工程师 · 上海
+要求：3+ 年 React 经验，熟悉性能优化，复杂状态管理 / 协作编辑经验优先`;
+
+const DEMO_QUESTIONS: Question[] = [
+  {
+    id: "q1",
+    text: "请介绍你在 ByteSpark 实习期间最有挑战性的项目，你是如何解决核心技术难题的？",
+    category: "项目经历",
+    difficulty: "medium",
+  },
+  {
+    id: "q2",
+    text: "你具体做了哪些前端性能优化工作？取得了什么可量化的成果？",
+    category: "技术深度",
+    difficulty: "hard",
+  },
+  {
+    id: "q3",
+    text: "请描述一次你主动推动团队改进开发流程或技术实践的经历。",
+    category: "行为面试",
+    difficulty: "medium",
+  },
+  {
+    id: "q4",
+    text: "如果要设计一个支持多人实时协作的白板应用，你会如何考虑前端架构和状态同步方案？",
+    category: "系统设计",
+    difficulty: "hard",
+  },
+  {
+    id: "q5",
+    text: "请解释 React 中 useCallback 与 useMemo 的区别，以及各自适用的场景。",
+    category: "基础知识",
+    difficulty: "easy",
+  },
+];
+
+// ── Progress bar ──────────────────────────────────────────────────────────────
 
 function ProgressBar() {
   const { questions, currentQuestionIndex } = useInterview();
@@ -32,8 +74,23 @@ function ProgressBar() {
   );
 }
 
+// ── Main content ──────────────────────────────────────────────────────────────
+
+const STEP_NUM = { input: 0, interview: 1, feedback: 2 } as const;
+const STEP_LABELS = ["输入", "面试", "反馈"] as const;
+const STEP_KEYS = ["input", "interview", "feedback"] as const;
+
 function AppContent() {
-  const { step, questions, reset, jumpToStep } = useInterview();
+  const { step, questions, reset, jumpToStep, startInterview } = useInterview();
+
+  const handleDemoJump = (s: (typeof STEP_KEYS)[number]) => {
+    if (s === "interview" && questions.length === 0) {
+      // Pre-fill mock data so InterviewStep has something to render
+      startInterview(DEMO_QUESTIONS, DEMO_RESUME, DEMO_JD);
+    } else {
+      jumpToStep(s);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-canvas">
@@ -41,9 +98,7 @@ function AppContent() {
       {step === "interview" && <ProgressBar />}
       {step === "input" && <InputStep />}
       {step === "interview" && questions.length > 0 && <InterviewStep />}
-      {step === "feedback" && (
-        <FeedbackStep onRestart={reset} />
-      )}
+      {step === "feedback" && <FeedbackStep onRestart={reset} />}
 
       {/* Demo step jumper */}
       <div className="fixed bottom-5 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur ring-1 ring-slate-200 ring-soft rounded-full px-2 py-1.5 flex items-center gap-1 text-[11px] z-30">
@@ -51,7 +106,7 @@ function AppContent() {
         {STEP_KEYS.map((s, i) => (
           <button
             key={s}
-            onClick={() => jumpToStep(s)}
+            onClick={() => handleDemoJump(s)}
             className={`px-3 py-1 rounded-full transition ${step === s ? "bg-indigo-600 text-white" : "text-slate-500 hover:bg-slate-100"}`}
           >
             {STEP_LABELS[i]}

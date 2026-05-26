@@ -23,6 +23,7 @@ function WaveBars({ active }: { active: boolean }) {
 
 export default function InterviewStep() {
   const { questions, currentQuestionIndex, submitAnswer, nextQuestion, goToFeedback } = useInterview();
+  const [speechSupported, setSpeechSupported] = useState(true);
   const [recording, setRecording] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [interimTranscript, setInterimTranscript] = useState("");
@@ -30,15 +31,24 @@ export default function InterviewStep() {
   const [speechError, setSpeechError] = useState("");
 
   const recognitionRef = useRef<SpeechRecognition | null>(null);
-  const textRef = useRef<HTMLDivElement>(null);
+  const liveRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const questionStartRef = useRef(Date.now());
   const thinkingTimeMsRef = useRef(0);
 
+  // Detect speech recognition support on mount
   useEffect(() => {
-    if (textRef.current) {
-      textRef.current.scrollTop = textRef.current.scrollHeight;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const w = window as any;
+    setSpeechSupported(!!(w.SpeechRecognition || w.webkitSpeechRecognition));
+  }, []);
+
+  // Auto-scroll the live view while recording
+  useEffect(() => {
+    if (recording && liveRef.current) {
+      liveRef.current.scrollTop = liveRef.current.scrollHeight;
     }
-  }, [transcript, interimTranscript]);
+  }, [transcript, interimTranscript, recording]);
 
   // Reset timing counters whenever a new question appears
   useEffect(() => {
@@ -120,7 +130,7 @@ export default function InterviewStep() {
   const handleNext = () => {
     const answer: Answer = {
       questionId: questions[currentQuestionIndex].id,
-      transcript: transcript + interimTranscript,
+      transcript: (transcript + interimTranscript).trim(),
       durationSeconds: seconds,
       thinkingTimeMs: thinkingTimeMsRef.current,
     };
@@ -142,12 +152,31 @@ export default function InterviewStep() {
 
   const q = questions[currentQuestionIndex];
   const thinkRing = Math.min(seconds / 120, 1);
-  const wordCount = (transcript + interimTranscript).replace(/\s/g, "").length;
-  const wordsPerMin =
-    seconds > 0 ? Math.round((wordCount / seconds) * 60) : 0;
+  const fullText = recording ? transcript + interimTranscript : transcript;
+  const wordCount = fullText.replace(/\s/g, "").length;
+  const wordsPerMin = seconds > 0 ? Math.round((wordCount / seconds) * 60) : 0;
 
   return (
     <section className="fade-up max-w-[1240px] mx-auto px-6 lg:px-10 pt-10 pb-16">
+      {!speechSupported && (
+        <div className="mb-6 flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-[13px] text-amber-900">
+          <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0 mt-0.5 text-amber-500" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+            <line x1="12" y1="9" x2="12" y2="13" />
+            <line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+          <p className="leading-relaxed">
+            <span className="font-semibold">当前浏览器不支持语音识别</span>
+            （Safari / Firefox 暂未实现 Web Speech API）。
+            你仍可在右侧文字框<span className="font-medium">直接键入回答</span>，所有评分功能正常可用。
+            如需语音输入，请切换至{" "}
+            <a href="https://www.google.com/chrome/" target="_blank" rel="noopener noreferrer" className="underline font-medium hover:text-amber-700">
+              Chrome 浏览器
+            </a>
+            。
+          </p>
+        </div>
+      )}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3 text-[12px]">
           <span className="px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 font-medium">
@@ -204,22 +233,30 @@ export default function InterviewStep() {
                 </>
               )}
               <button
-                onClick={toggleRec}
-                className={`relative w-32 h-32 rounded-full grid place-items-center text-white transition-all ring-soft
-                  ${recording ? "bg-rose-500 hover:bg-rose-600" : "bg-indigo-600 hover:bg-indigo-700 hover:scale-105"}`}
+                onClick={speechSupported ? toggleRec : undefined}
+                disabled={!speechSupported}
+                className={`relative w-32 h-32 rounded-full grid place-items-center transition-all ring-soft
+                  ${!speechSupported
+                    ? "bg-slate-100 text-slate-300 cursor-not-allowed"
+                    : recording
+                      ? "text-white bg-rose-500 hover:bg-rose-600"
+                      : "text-white bg-indigo-600 hover:bg-indigo-700 hover:scale-105"
+                  }`}
               >
-                {recording ? (
+                {!speechSupported ? (
+                  // Mic with a slash — indicates unavailable
+                  <svg viewBox="0 0 24 24" className="w-12 h-12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="2" y1="2" x2="22" y2="22" />
+                    <path d="M18.89 13.23A7 7 0 0 0 19 12v-1" />
+                    <path d="M5 10v2a7 7 0 0 0 11.32 5.56" />
+                    <path d="M15 9.34V5a3 3 0 0 0-5.68-1.33" />
+                    <path d="M9 9v3a3 3 0 0 0 5.12 2.12" />
+                    <line x1="12" y1="19" x2="12" y2="23" />
+                  </svg>
+                ) : recording ? (
                   <div className="w-8 h-8 rounded-md bg-white"></div>
                 ) : (
-                  <svg
-                    viewBox="0 0 24 24"
-                    className="w-12 h-12"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
+                  <svg viewBox="0 0 24 24" className="w-12 h-12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                     <rect x="9" y="3" width="6" height="12" rx="3" />
                     <path d="M5 11a7 7 0 0 0 14 0" />
                     <path d="M12 18v3" />
@@ -229,7 +266,9 @@ export default function InterviewStep() {
             </div>
 
             <div className="mt-6 text-[13px] text-slate-500">
-              {speechError ? (
+              {!speechSupported ? (
+                <span className="text-amber-600">浏览器不支持语音，请在右侧输入</span>
+              ) : speechError ? (
                 <span className="text-rose-500">{speechError}</span>
               ) : recording ? (
                 "正在录音 · 再次点击结束"
@@ -338,75 +377,85 @@ export default function InterviewStep() {
           </div>
         </div>
 
-        {/* Right: Live transcript */}
+        {/* Right: Transcript (live view while recording, editable after) */}
         <div className="bg-white rounded-2xl ring-1 ring-slate-200 ring-soft p-6 flex flex-col">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <div
-                className={`w-2 h-2 rounded-full ${recording ? "bg-rose-500 animate-pulse" : "bg-slate-300"}`}
-              ></div>
-              <div className="text-[13px] font-medium">实时语音转文字</div>
+                className={`w-2 h-2 rounded-full transition-colors ${
+                  recording ? "bg-rose-500 animate-pulse" : transcript ? "bg-emerald-400" : "bg-slate-300"
+                }`}
+              />
+              <div className="text-[13px] font-medium">
+                {recording ? "实时语音转文字" : "回答内容"}
+              </div>
             </div>
-            <div className="text-[11px] text-slate-400 font-mono">
-              zh-CN · auto
-            </div>
-          </div>
-
-          <div
-            ref={textRef}
-            className="flex-1 scroll overflow-auto bg-slate-50/60 rounded-xl p-5 text-[14px] leading-[1.85] text-slate-700 min-h-[360px] max-h-[460px]"
-          >
-            {transcript === "" && interimTranscript === "" && (
-              <div className="text-slate-300 text-[13px] flex items-center gap-2 h-full justify-center flex-col">
-                <svg
-                  viewBox="0 0 24 24"
-                  className="w-8 h-8 text-slate-200"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                  <line x1="12" y1="19" x2="12" y2="23" />
+            {recording ? (
+              <div className="text-[11px] text-slate-400 font-mono">zh-CN · auto</div>
+            ) : (
+              <div className="flex items-center gap-1 text-[11px] text-emerald-600 font-medium">
+                <svg viewBox="0 0 24 24" className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4Z" />
                 </svg>
-                等待你开始作答…
+                可直接编辑
               </div>
             )}
-            {transcript && <span>{transcript}</span>}
-            {interimTranscript && (
-              <span className="text-indigo-600 bg-indigo-50 rounded px-0.5">
-                {interimTranscript}
-                <span className="caret">|</span>
-              </span>
-            )}
           </div>
+
+          {/* Live read-only view while recording */}
+          {recording && (
+            <div
+              ref={liveRef}
+              className="flex-1 scroll overflow-auto bg-slate-50/60 rounded-xl p-5 text-[14px] leading-[1.85] text-slate-700 min-h-[360px] max-h-[460px]"
+            >
+              {transcript === "" && interimTranscript === "" && (
+                <div className="text-slate-300 text-[13px] flex items-center gap-2 h-full justify-center flex-col">
+                  <svg viewBox="0 0 24 24" className="w-8 h-8 text-slate-200" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                    <line x1="12" y1="19" x2="12" y2="23" />
+                  </svg>
+                  等待你开始作答…
+                </div>
+              )}
+              {transcript && <span>{transcript}</span>}
+              {interimTranscript && (
+                <span className="text-indigo-600 bg-indigo-50 rounded px-0.5">
+                  {interimTranscript}
+                  <span className="caret">|</span>
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Editable textarea after recording stops */}
+          {!recording && (
+            <textarea
+              ref={textareaRef}
+              value={transcript}
+              onChange={(e) => setTranscript(e.target.value)}
+              placeholder="点击左侧麦克风开始录音，或直接在此输入回答…"
+              className="flex-1 scroll resize-none bg-slate-50/60 rounded-xl p-5 text-[14px] leading-[1.85] text-slate-700 placeholder-slate-300 outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500/40 transition min-h-[360px] max-h-[460px]"
+            />
+          )}
 
           <div className="mt-4 grid grid-cols-3 gap-3 text-center">
             <div className="bg-slate-50/60 rounded-lg py-2.5">
-              <div className="text-[10px] text-slate-400 uppercase tracking-wide">
-                字数
-              </div>
+              <div className="text-[10px] text-slate-400 uppercase tracking-wide">字数</div>
               <div className="text-[15px] font-mono font-medium tabular-nums text-slate-800">
                 {wordCount}
               </div>
             </div>
             <div className="bg-slate-50/60 rounded-lg py-2.5">
-              <div className="text-[10px] text-slate-400 uppercase tracking-wide">
-                语速
-              </div>
+              <div className="text-[10px] text-slate-400 uppercase tracking-wide">语速</div>
               <div className="text-[15px] font-mono font-medium tabular-nums text-slate-800">
                 {wordsPerMin}
-                <span className="text-[10px] text-slate-400 ml-0.5">
-                  字/分
-                </span>
+                <span className="text-[10px] text-slate-400 ml-0.5">字/分</span>
               </div>
             </div>
             <div className="bg-slate-50/60 rounded-lg py-2.5">
-              <div className="text-[10px] text-slate-400 uppercase tracking-wide">
-                用时
-              </div>
+              <div className="text-[10px] text-slate-400 uppercase tracking-wide">用时</div>
               <div className="text-[15px] font-mono font-medium tabular-nums text-slate-800">
                 {fmt(seconds)}
               </div>
@@ -414,21 +463,12 @@ export default function InterviewStep() {
           </div>
 
           <div className="mt-4 flex items-start gap-2 px-3 py-2.5 bg-indigo-50/60 rounded-lg">
-            <svg
-              viewBox="0 0 24 24"
-              className="w-3.5 h-3.5 text-indigo-500 shrink-0 mt-0.5"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
+            <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 text-indigo-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="10" />
               <path d="M12 16v-4M12 8h.01" />
             </svg>
             <div className="text-[12px] text-indigo-900/70 leading-relaxed">
-              提示：使用 <b>STAR</b> 结构（Situation - Task - Action - Result）
-              回答行为面问题。
+              提示：使用 <b>STAR</b> 结构（Situation - Task - Action - Result）回答行为面问题。
             </div>
           </div>
         </div>
