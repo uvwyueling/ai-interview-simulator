@@ -5,11 +5,18 @@ import { z } from "zod";
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
 const RequestSchema = z.object({
-  question: z.string().min(1, "问题不能为空"),
-  transcript: z.string().min(1, "回答内容不能为空"),
-  thinkingTime: z.number().min(0, "思考时间不能为负数"),
-  speakingTime: z.number().min(0, "回答时间不能为负数"),
+  mainQuestion: z.string().min(1, "主问题不能为空"),
+  thread: z
+    .array(
+      z.object({
+        question: z.string().min(1),
+        answer: z.string().min(1),
+      })
+    )
+    .min(1, "对话记录不能为空"),
   resume: z.string().min(1, "简历不能为空"),
+  thinkingTime: z.number().min(0),
+  speakingTime: z.number().min(0),
 });
 
 const FeedbackSchema = z.object({
@@ -44,11 +51,14 @@ function thinkingTimeGuidance(ms: number): string {
 
 function buildSystemPrompt(thinkingTimeMs: number, speakingTimeMs: number): string {
   const speakingSec = (speakingTimeMs / 1000).toFixed(0);
-  return `你是一位拥有 10 年经验的资深技术面试官，正在对候选人的面试回答进行专业评估。
+  return `你是一位拥有 10 年经验的资深技术面试官，正在对候选人的整轮面试作答（含追问环节）进行综合评估。
 
 【计时数据】
 - ${thinkingTimeGuidance(thinkingTimeMs)}
-- 候选人实际回答时长：${speakingSec} 秒
+- 候选人本题总回答时长：${speakingSec} 秒（含所有追问回合）
+
+【评分说明】
+对话记录可能包含主问题和多轮追问，请综合评估整个对话，而非单独评价某一轮回答。
 
 【评分维度定义】
 - communication（沟通能力）：表达流畅性、语言组织能力
@@ -59,7 +69,7 @@ function buildSystemPrompt(thinkingTimeMs: number, speakingTimeMs: number): stri
 
 【modelAnswer 要求】
 必须结合候选人简历中的真实经历来定制，不允许给通用答案。
-展示如何将简历中的具体项目/成就套入 STAR 结构（情境-任务-行动-结果）来回答该问题。
+展示如何将简历中的具体项目/成就套入 STAR 结构（情境-任务-行动-结果）来回答主问题（包括应对追问的思路）。
 
 【输出格式】
 严格输出以下 JSON，不要包含任何其他文字、注释或 markdown 标记：
@@ -124,7 +134,6 @@ async function callWithRetry(
 
       return validated.data;
     } catch (err) {
-      // API-level errors and auth config errors should not be retried
       if (err instanceof Anthropic.APIError) throw err;
 
       lastError = err instanceof Error ? err : new Error(String(err));
@@ -163,11 +172,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: messages }, { status: 400 });
   }
 
-  const { question, transcript, thinkingTime, speakingTime, resume } =
-    parseResult.data;
+  const { mainQuestion, thread, thinkingTime, speakingTime, resume } = parseResult.data;
+
+  const threadText = thread
+    .map(
+      (t, i) =>
+        `【第 ${i + 1} 轮${i === 0 ? "（主问题）" : "（追问）"}】\n问：${t.question}\n答：${t.answer}`
+    )
+    .join("\n\n");
 
   const systemPrompt = buildSystemPrompt(thinkingTime, speakingTime);
-  const userMessage = `【面试问题】\n${question}\n\n【候选人简历】\n${resume}\n\n【候选人回答】\n${transcript}`;
+  const userMessage = `【主面试问题】\n${mainQuestion}\n\n【完整对话记录（含追问）】\n${threadText}\n\n【候选人简历】\n${resume}`;
 
   try {
     const feedback = await callWithRetry(systemPrompt, userMessage);

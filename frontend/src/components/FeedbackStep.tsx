@@ -66,7 +66,15 @@ function ErrorCard({ message, onRetry }: { message: string; onRetry: () => void 
   return (
     <div className="lg:col-span-2 bg-white rounded-2xl ring-1 ring-rose-200 p-10 flex flex-col items-center gap-4 text-center">
       <div className="w-10 h-10 rounded-full bg-rose-50 grid place-items-center text-rose-500">
-        <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg
+          viewBox="0 0 24 24"
+          className="w-5 h-5"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
           <circle cx="12" cy="12" r="10" />
           <path d="M12 8v4M12 16h.01" />
         </svg>
@@ -79,7 +87,15 @@ function ErrorCard({ message, onRetry }: { message: string; onRetry: () => void 
         onClick={onRetry}
         className="text-[13px] font-medium px-5 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition flex items-center gap-2"
       >
-        <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <svg
+          viewBox="0 0 24 24"
+          className="w-3.5 h-3.5"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
           <path d="M3 12a9 9 0 1 0 9-9" />
           <polyline points="3 4 3 12 11 12" />
         </svg>
@@ -94,9 +110,9 @@ type Props = {
 };
 
 export default function FeedbackStep({ onRestart }: Props) {
-  const { questions, answers, resume } = useInterview();
-  const isDemo = answers.length === 0;
-  const count = isDemo ? 1 : answers.length;
+  const { completedThreads, resume } = useInterview();
+  const isDemo = completedThreads.length === 0;
+  const count = isDemo ? 1 : completedThreads.length;
 
   const [feedbacks, setFeedbacks] = useState<(Feedback | null)[]>(() =>
     new Array(count).fill(null)
@@ -110,31 +126,61 @@ export default function FeedbackStep({ onRestart }: Props) {
   const [selectedIdx, setSelectedIdx] = useState(0);
 
   const fetchOne = async (i: number) => {
-    setLoadingStates((prev) => { const n = [...prev]; n[i] = true; return n; });
-    setFetchErrors((prev) => { const n = [...prev]; n[i] = null; return n; });
+    setLoadingStates((prev) => {
+      const n = [...prev];
+      n[i] = true;
+      return n;
+    });
+    setFetchErrors((prev) => {
+      const n = [...prev];
+      n[i] = null;
+      return n;
+    });
 
-    const answer = answers[i];
-    const q = questions.find((q) => q.id === answer.questionId);
-    if (!q) {
-      setFetchErrors((prev) => { const n = [...prev]; n[i] = "找不到对应问题"; return n; });
-      setLoadingStates((prev) => { const n = [...prev]; n[i] = false; return n; });
+    const thread = completedThreads[i];
+    if (!thread) {
+      setFetchErrors((prev) => {
+        const n = [...prev];
+        n[i] = "找不到对应对话记录";
+        return n;
+      });
+      setLoadingStates((prev) => {
+        const n = [...prev];
+        n[i] = false;
+        return n;
+      });
       return;
     }
+
+    // Compute timing from the thread exchanges
+    const thinkingTime = thread.exchanges[0]?.answer.thinkingTimeMs ?? 0;
+    const speakingTime = thread.exchanges.reduce(
+      (sum, e) => sum + e.answer.durationSeconds * 1000,
+      0
+    );
+
     try {
       const res = await fetch("/api/generate-feedback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          question: q.text,
-          transcript: answer.transcript || "（未作答）",
-          thinkingTime: answer.thinkingTimeMs,
-          speakingTime: answer.durationSeconds * 1000,
+          mainQuestion: thread.mainQuestion.text,
+          thread: thread.exchanges.map((e) => ({
+            question: e.question.text,
+            answer: e.answer.transcript || "（未作答）",
+          })),
           resume,
+          thinkingTime,
+          speakingTime,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "生成反馈失败");
-      setFeedbacks((prev) => { const n = [...prev]; n[i] = data as Feedback; return n; });
+      setFeedbacks((prev) => {
+        const n = [...prev];
+        n[i] = data as Feedback;
+        return n;
+      });
     } catch (err) {
       setFetchErrors((prev) => {
         const n = [...prev];
@@ -142,7 +188,11 @@ export default function FeedbackStep({ onRestart }: Props) {
         return n;
       });
     } finally {
-      setLoadingStates((prev) => { const n = [...prev]; n[i] = false; return n; });
+      setLoadingStates((prev) => {
+        const n = [...prev];
+        n[i] = false;
+        return n;
+      });
     }
   };
 
@@ -152,7 +202,7 @@ export default function FeedbackStep({ onRestart }: Props) {
       return;
     }
     // Stagger requests by 1.2 s each to avoid rate limits
-    const timers = answers.map((_, i) =>
+    const timers = completedThreads.map((_, i) =>
       setTimeout(() => fetchOne(i), i * 1200)
     );
     return () => timers.forEach(clearTimeout);
@@ -170,6 +220,10 @@ export default function FeedbackStep({ onRestart }: Props) {
 
   const gradeLabel = (score: number) =>
     score >= 85 ? "A" : score >= 75 ? "B+" : score >= 65 ? "B" : "C";
+
+  // Exchange count for selected thread (shows follow-up depth)
+  const selectedThread = isDemo ? null : completedThreads[selectedIdx];
+  const exchangeCount = selectedThread ? selectedThread.exchanges.length : 0;
 
   return (
     <section className="fade-up max-w-[1240px] mx-auto px-6 lg:px-10 pt-10 pb-20">
@@ -198,7 +252,7 @@ export default function FeedbackStep({ onRestart }: Props) {
               </div>
             )}
           </div>
-          <div className="w-px h-12 bg-slate-200"></div>
+          <div className="w-px h-12 bg-slate-200" />
           <div className="text-center">
             <div className="text-[11px] uppercase tracking-wider text-slate-400">评级</div>
             {isLoading ? (
@@ -215,42 +269,93 @@ export default function FeedbackStep({ onRestart }: Props) {
       {/* Question tabs */}
       {!isDemo && count > 1 && (
         <div className="flex items-center gap-2 mb-6 flex-wrap">
-          {answers.map((answer, i) => {
-            const q = questions.find((q) => q.id === answer.questionId);
-            return (
-              <button
-                key={i}
-                onClick={() => setSelectedIdx(i)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-medium transition ${
-                  selectedIdx === i
-                    ? "bg-indigo-600 text-white"
-                    : "bg-white ring-1 ring-slate-200 text-slate-600 hover:ring-indigo-300"
-                }`}
-              >
-                <span>Q{i + 1}</span>
-                {q && (
-                  <span className="hidden sm:inline text-[11px] opacity-70 truncate max-w-[120px]">
-                    {q.category}
-                  </span>
-                )}
-                {loadingStates[i] && (
-                  <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                    <path d="M12 3a9 9 0 1 0 9 9" />
-                  </svg>
-                )}
-                {!loadingStates[i] && feedbacks[i] && !fetchErrors[i] && (
-                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                )}
-                {!loadingStates[i] && fetchErrors[i] && (
-                  <svg className="w-3.5 h-3.5 text-rose-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                  </svg>
-                )}
-              </button>
-            );
-          })}
+          {completedThreads.map((thread, i) => (
+            <button
+              key={i}
+              onClick={() => setSelectedIdx(i)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-medium transition ${
+                selectedIdx === i
+                  ? "bg-indigo-600 text-white"
+                  : "bg-white ring-1 ring-slate-200 text-slate-600 hover:ring-indigo-300"
+              }`}
+            >
+              <span>Q{i + 1}</span>
+              <span className="hidden sm:inline text-[11px] opacity-70 truncate max-w-[120px]">
+                {thread.mainQuestion.category}
+              </span>
+              {/* Exchange depth badge */}
+              {thread.exchanges.length > 1 && (
+                <span
+                  className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                    selectedIdx === i
+                      ? "bg-white/20 text-white"
+                      : "bg-amber-50 text-amber-700"
+                  }`}
+                >
+                  +{thread.exchanges.length - 1}追问
+                </span>
+              )}
+              {loadingStates[i] && (
+                <svg
+                  className="w-3.5 h-3.5 animate-spin"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                >
+                  <path d="M12 3a9 9 0 1 0 9 9" />
+                </svg>
+              )}
+              {!loadingStates[i] && feedbacks[i] && !fetchErrors[i] && (
+                <svg
+                  className="w-3.5 h-3.5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              )}
+              {!loadingStates[i] && fetchErrors[i] && (
+                <svg
+                  className="w-3.5 h-3.5 text-rose-400"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                >
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Exchange depth info for current thread */}
+      {!isDemo && exchangeCount > 1 && (
+        <div className="mb-4 flex items-center gap-2 text-[12px] text-slate-500">
+          <svg
+            viewBox="0 0 24 24"
+            className="w-3.5 h-3.5 text-amber-500"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <polyline points="9 14 4 9 9 4" />
+            <path d="M20 20v-7a4 4 0 0 0-4-4H4" />
+          </svg>
+          <span>
+            本题共 {exchangeCount} 轮对话（1 主问题 + {exchangeCount - 1} 次追问），以下为综合评分
+          </span>
         </div>
       )}
 
@@ -275,11 +380,11 @@ export default function FeedbackStep({ onRestart }: Props) {
                   <div className="text-[14px] font-semibold">能力雷达</div>
                   <div className="flex items-center gap-3 text-[11px] text-slate-400">
                     <span className="flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-sm bg-indigo-600"></span>
+                      <span className="w-2 h-2 rounded-sm bg-indigo-600" />
                       本次表现
                     </span>
                     <span className="flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-sm bg-slate-200"></span>
+                      <span className="w-2 h-2 rounded-sm bg-slate-200" />
                       满分基准
                     </span>
                   </div>

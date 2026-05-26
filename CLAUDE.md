@@ -23,7 +23,8 @@ AI 面试模拟器 Demo。用户上传简历+JD → AI 生成问题 → 语音�
 1. **Plan**：列出输入/输出/错误场景
 2. **Execute**：写代码
 3. **Verify**：运行 `npm run build`，失败则修复直到通过
-4. **完成**：更新 todo.md
+4. **完成**：更新 TODO.md
+5. **版本日志**：在 `CHANGELOG.md` 顶部追加本次变更，遵循 Keep a Changelog 格式（Added / Changed / Fixed 分节）；同步更新 `frontend/package.json` 的版本号（新功能 → minor，Bug 修复 → patch，破坏性变更 → major）
 
 ## 禁止事项
 - 硬编码 API 密钥

@@ -53,10 +53,10 @@ const DEMO_POOL: Omit<Question, "id">[] = [
   },
 ];
 
-function pickFive(pool: Omit<Question, "id">[]): Question[] {
+function pickThree(pool: Omit<Question, "id">[]): Question[] {
   return [...pool]
     .sort(() => Math.random() - 0.5)
-    .slice(0, 5)
+    .slice(0, 3)
     .map((q, i) => ({ ...q, id: `q${i + 1}` }));
 }
 
@@ -121,7 +121,7 @@ export default function InputStep() {
 
     // Demo fast-path: both inputs are unmodified sample data → skip API call
     if (resume === SAMPLE_RESUME && jd === SAMPLE_JD) {
-      startInterview(pickFive(DEMO_POOL), resume, jd);
+      startInterview(pickThree(DEMO_POOL), resume, jd, true);
       return;
     }
 
@@ -138,7 +138,7 @@ export default function InputStep() {
         setError(data.error || "生成失败，请重试");
         return;
       }
-      startInterview(data.questions, resume, jd);
+      startInterview(data.questions, resume, jd, false);
     } catch {
       setError("网络错误，请检查连接后重试");
     } finally {
@@ -160,8 +160,7 @@ export default function InputStep() {
           <span className="text-indigo-600"> 什么样的人</span>。
         </h1>
         <p className="mt-3 text-[14px] text-slate-500 max-w-xl mx-auto">
-          上传简历和岗位 JD，AI 将基于你的真实背景，为你生成 5
-          道有针对性的面试问题。
+          上传简历和岗位 JD，AI 将生成 3 道核心面试题，并根据你的回答实时追问（最多 3 次），模拟真实深度面试体验。
         </p>
       </div>
 

@@ -12,6 +12,16 @@ export type Answer = {
   thinkingTimeMs: number;
 };
 
+export type Exchange = {
+  question: Question;
+  answer: Answer;
+};
+
+export type QuestionThread = {
+  mainQuestion: Question;
+  exchanges: Exchange[]; // first = main Q&A, subsequent = follow-up Q&As
+};
+
 export type FeedbackDimensions = {
   communication: number;
   technicalDepth: number;

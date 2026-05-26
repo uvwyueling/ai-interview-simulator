@@ -26,24 +26,12 @@ const DEMO_QUESTIONS: Question[] = [
   },
   {
     id: "q2",
-    text: "你具体做了哪些前端性能优化工作？取得了什么可量化的成果？",
-    category: "技术深度",
-    difficulty: "hard",
-  },
-  {
-    id: "q3",
-    text: "请描述一次你主动推动团队改进开发流程或技术实践的经历。",
-    category: "行为面试",
-    difficulty: "medium",
-  },
-  {
-    id: "q4",
     text: "如果要设计一个支持多人实时协作的白板应用，你会如何考虑前端架构和状态同步方案？",
     category: "系统设计",
     difficulty: "hard",
   },
   {
-    id: "q5",
+    id: "q3",
     text: "请解释 React 中 useCallback 与 useMemo 的区别，以及各自适用的场景。",
     category: "基础知识",
     difficulty: "easy",
@@ -53,15 +41,15 @@ const DEMO_QUESTIONS: Question[] = [
 // ── Progress bar ──────────────────────────────────────────────────────────────
 
 function ProgressBar() {
-  const { questions, currentQuestionIndex } = useInterview();
+  const { questions, currentMainIndex } = useInterview();
   const total = questions.length;
   if (total === 0) return null;
-  const pct = (currentQuestionIndex / total) * 100;
+  const pct = (currentMainIndex / total) * 100;
 
   return (
     <div className="max-w-[1240px] mx-auto px-6 lg:px-10 py-3 flex items-center gap-4">
       <div className="text-[12px] text-slate-500 whitespace-nowrap">
-        第 <span className="font-semibold text-slate-900">{currentQuestionIndex + 1}</span> 题
+        主题 <span className="font-semibold text-slate-900">{currentMainIndex + 1}</span>
         {" "}/ 共 <span className="font-semibold text-slate-900">{total}</span> 题
       </div>
       <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
@@ -86,7 +74,7 @@ function AppContent() {
   const handleDemoJump = (s: (typeof STEP_KEYS)[number]) => {
     if (s === "interview" && questions.length === 0) {
       // Pre-fill mock data so InterviewStep has something to render
-      startInterview(DEMO_QUESTIONS, DEMO_RESUME, DEMO_JD);
+      startInterview(DEMO_QUESTIONS, DEMO_RESUME, DEMO_JD, true);
     } else {
       jumpToStep(s);
     }

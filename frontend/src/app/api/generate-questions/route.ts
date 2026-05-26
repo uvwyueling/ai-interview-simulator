@@ -15,7 +15,7 @@ const QuestionSchema = z.object({
 });
 
 const ResponseSchema = z.object({
-  questions: z.array(QuestionSchema).length(5),
+  questions: z.array(QuestionSchema).length(3),
 });
 
 export type Question = z.infer<typeof QuestionSchema>;
@@ -24,12 +24,14 @@ export type GenerateQuestionsResponse = z.infer<typeof ResponseSchema>;
 const client = new Anthropic();
 
 const SYSTEM_PROMPT = `你是一位拥有 10 年经验的资深技术面试官。
-根据候选人的简历和岗位 JD，生成 5 个深度定制的面试问题。
+根据候选人的简历和岗位 JD，生成 3 个深度定制的主面试问题。
+
+这 3 道题将进行追问式深度面试：每道题回答后，AI 面试官会根据回答内容决定是否进一步追问（最多 3 次追问），以挖掘候选人的真实能力深度。因此这 3 道主问题应具备足够的延展空间。
 
 要求：
-1. 至少 2 个问题针对简历中的具体项目经历，要追问实现细节和技术决策
-2. 至少 2 个问题考察 JD 中明确要求的核心技能
-3. 问题要有梯度，覆盖不同难度
+1. 第 1 题：针对简历中最亮眼的项目经历，考察具体技术实现与决策
+2. 第 2 题：考察 JD 核心技能（系统设计或技术深度），有足够追问空间
+3. 第 3 题：行为面试或岗位匹配度，考察软实力与职业成熟度
 4. category 必须是以下之一：技术深度、项目经历、系统设计、行为面试、基础知识
 5. difficulty 必须是以下之一：easy、medium、hard
 
@@ -39,7 +41,7 @@ const SYSTEM_PROMPT = `你是一位拥有 10 年经验的资深技术面试官�
     {
       "id": "q1",
       "text": "问题文本",
-      "category": "技术深度",
+      "category": "项目经历",
       "difficulty": "medium"
     }
   ]
