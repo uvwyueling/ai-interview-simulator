@@ -30,12 +30,21 @@ export type FeedbackDimensions = {
   jobFit: number;
 };
 
+/** Per-dimension bullet-point evaluations grounded in resume + JD + answer content. */
+export type DimensionDetails = {
+  communication: string[];
+  technicalDepth: string[];
+  logicalThinking: string[];
+  clarity: string[];
+  jobFit: string[];
+};
+
 export type Feedback = {
   overallScore: number;
   dimensions: FeedbackDimensions;
+  dimensionDetails: DimensionDetails;
   strengths: string[];
   improvements: string[];
-  modelAnswer: string;
   thinkingTimeFeedback: string;
 };
 

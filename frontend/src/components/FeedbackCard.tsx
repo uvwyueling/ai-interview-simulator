@@ -3,7 +3,6 @@
 export type FeedbackCardData = {
   strengths: string[];
   improvements: string[];
-  modelAnswer: string;
   thinkingTimeFeedback: string;
 };
 
@@ -54,19 +53,6 @@ function LoadingSkeleton() {
           </div>
         ))}
       </div>
-
-      {/* Model answer skeleton */}
-      <div className="bg-white rounded-2xl ring-1 ring-slate-200 p-6 space-y-4">
-        <div className="flex items-center gap-2">
-          <Sk className="w-7 h-7 rounded-lg" />
-          <Sk className="h-4 w-20" />
-        </div>
-        <div className="border-l-4 border-slate-200 pl-4 space-y-2">
-          <Sk className="h-3 w-full" />
-          <Sk className="h-3 w-full" />
-          <Sk className="h-3 w-3/4" />
-        </div>
-      </div>
     </div>
   );
 }
@@ -74,7 +60,6 @@ function LoadingSkeleton() {
 export default function FeedbackCard({
   strengths,
   improvements,
-  modelAnswer,
   thinkingTimeFeedback,
   isLoading = false,
 }: Props) {
@@ -172,32 +157,6 @@ export default function FeedbackCard({
             </li>
           ))}
         </ul>
-      </div>
-
-      {/* Model answer — blockquote */}
-      <div className="bg-white rounded-2xl ring-1 ring-slate-200 ring-soft p-6">
-        <div className="flex items-center gap-2 mb-4">
-          <div className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 grid place-items-center shrink-0">
-            <svg
-              viewBox="0 0 24 24"
-              className="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-            </svg>
-          </div>
-          <span className="text-[14px] font-semibold">示范回答</span>
-          <span className="ml-auto text-[11px] text-slate-400">
-            结合你的简历经历
-          </span>
-        </div>
-        <blockquote className="border-l-4 border-indigo-200 pl-4 text-[13px] leading-[1.9] text-slate-600 italic">
-          {modelAnswer}
-        </blockquote>
       </div>
     </div>
   );

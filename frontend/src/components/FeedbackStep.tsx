@@ -3,8 +3,8 @@
 import { useState, useEffect, useMemo } from "react";
 import RadarChart from "./RadarChart";
 import FeedbackCard from "./FeedbackCard";
-import type { Feedback } from "@/types/interview";
-import { feedbackToRadarDims } from "@/types/interview";
+import type { Feedback, FeedbackDimensions, DimensionDetails } from "@/types/interview";
+import { feedbackToRadarDims, DIMENSION_LABELS } from "@/types/interview";
 import { useInterview } from "@/context/InterviewContext";
 
 const MOCK_FEEDBACK: Feedback = {
@@ -16,6 +16,28 @@ const MOCK_FEEDBACK: Feedback = {
     clarity: 71,
     jobFit: 84,
   },
+  dimensionDetails: {
+    communication: [
+      "采用「背景—动作—结果」三段式开场，让面试官在 10 秒内就抓到了项目脉络。",
+      "在描述协作 OT 算法时使用了大量术语却未做铺垫，对非同领域听众形成理解门槛。",
+    ],
+    technicalDepth: [
+      "提到了「路由代码分割」「IntersectionObserver 懒挂载」「OT 批处理」三层优化方案，体现出体系化的性能优化思路。",
+      "未谈及取舍——如懒挂载对滚动体验的副作用、批处理对协作实时性的影响，深度可再加强。",
+    ],
+    logicalThinking: [
+      "三层优化按「网络传输 → 渲染层 → 业务层」顺序展开，符合性能分析的标准漏斗。",
+      "回答中量化指标完整（2.8 秒 → 0.9 秒、首包 -40%、合并 60% 操作），形成了闭环论证。",
+    ],
+    clarity: [
+      "结论先行（「最终首屏降到 0.9 秒」）是亮点，但中间段落信息密度过高，建议在每一层之间加一句小结。",
+      "语速偏快导致关键数据被一带而过，下次可在量化指标前主动停顿 1 秒。",
+    ],
+    jobFit: [
+      "JD 要求「性能优化经验」，候选人正好命中并给出了量化成果，匹配度高。",
+      "JD 同时要求「复杂状态管理 / 协作编辑经验」，候选人在 OT 算法上仅一句带过，建议展开协作冲突解决案例以更贴合岗位。",
+    ],
+  },
   strengths: [
     "回答采用「背景—动作—结果」三段式，听众容易跟上。",
     "提到了具体的量化指标，可信度高。",
@@ -26,11 +48,51 @@ const MOCK_FEEDBACK: Feedback = {
     "部分段落语速偏快，建议在关键结论处刻意停顿。",
     "可以在结尾用一句反问与面试官形成双向交流。",
   ],
-  modelAnswer:
-    "好的，让我从背景说起。在 ByteSpark 实习期间，我负责文档编辑器的性能优化专项。当时首屏加载时长达到 2.8 秒，远超产品要求的 1 秒目标。我主要从三个层面入手：第一，将同步路由改为基于路由的代码分割，减少首包体积约 40%；第二，用 IntersectionObserver 实现富文本块的懒挂载，避免一次性渲染大量 DOM；第三，对协作 OT 算法做批处理，将 60% 的小操作合并成批量提交。最终首屏降到 0.9 秒，达成目标，并在团队季度会上作为最佳实践分享。",
   thinkingTimeFeedback:
     "思考时间节奏良好，说明你在开口前有清晰的组织意识，这是一个很好的习惯。",
 };
+
+// ── Aggregation helpers (for "汇总" tab) ──────────────────────────────────────
+
+const DIM_KEYS: (keyof FeedbackDimensions)[] = [
+  "communication",
+  "technicalDepth",
+  "logicalThinking",
+  "clarity",
+  "jobFit",
+];
+
+function averageFeedback(feedbacks: Feedback[]): Feedback | null {
+  const valid = feedbacks.filter((f): f is Feedback => f !== null && f !== undefined);
+  if (valid.length === 0) return null;
+
+  const avg = (nums: number[]) => Math.round(nums.reduce((s, n) => s + n, 0) / nums.length);
+
+  const dimensions = {
+    communication: avg(valid.map((f) => f.dimensions.communication)),
+    technicalDepth: avg(valid.map((f) => f.dimensions.technicalDepth)),
+    logicalThinking: avg(valid.map((f) => f.dimensions.logicalThinking)),
+    clarity: avg(valid.map((f) => f.dimensions.clarity)),
+    jobFit: avg(valid.map((f) => f.dimensions.jobFit)),
+  };
+
+  const dimensionDetails: DimensionDetails = {
+    communication: valid.flatMap((f) => f.dimensionDetails.communication),
+    technicalDepth: valid.flatMap((f) => f.dimensionDetails.technicalDepth),
+    logicalThinking: valid.flatMap((f) => f.dimensionDetails.logicalThinking),
+    clarity: valid.flatMap((f) => f.dimensionDetails.clarity),
+    jobFit: valid.flatMap((f) => f.dimensionDetails.jobFit),
+  };
+
+  return {
+    overallScore: avg(valid.map((f) => f.overallScore)),
+    dimensions,
+    dimensionDetails,
+    strengths: Array.from(new Set(valid.flatMap((f) => f.strengths))),
+    improvements: Array.from(new Set(valid.flatMap((f) => f.improvements))),
+    thinkingTimeFeedback: "已综合三题表现，下方为整体能力画像。",
+  };
+}
 
 function Sk({ className = "" }: { className?: string }) {
   return <div className={`bg-slate-200 rounded animate-pulse ${className}`} />;
@@ -64,7 +126,7 @@ function RadarCardSkeleton() {
 
 function ErrorCard({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <div className="lg:col-span-2 bg-white rounded-2xl ring-1 ring-rose-200 p-10 flex flex-col items-center gap-4 text-center">
+    <div className="lg:col-span-3 bg-white rounded-2xl ring-1 ring-rose-200 p-10 flex flex-col items-center gap-4 text-center">
       <div className="w-10 h-10 rounded-full bg-rose-50 grid place-items-center text-rose-500">
         <svg
           viewBox="0 0 24 24"
@@ -110,7 +172,7 @@ type Props = {
 };
 
 export default function FeedbackStep({ onRestart }: Props) {
-  const { completedThreads, resume, jumpToStep } = useInterview();
+  const { completedThreads, resume, jd, jumpToStep } = useInterview();
   const isDemo = completedThreads.length === 0;
   const count = isDemo ? 1 : completedThreads.length;
 
@@ -123,7 +185,11 @@ export default function FeedbackStep({ onRestart }: Props) {
   const [fetchErrors, setFetchErrors] = useState<(string | null)[]>(() =>
     new Array(count).fill(null)
   );
-  const [selectedIdx, setSelectedIdx] = useState(0);
+  // -1 = "汇总" tab (cross-question summary); 0..n = individual question
+  const SUMMARY_IDX = -1;
+  const [selectedIdx, setSelectedIdx] = useState<number>(
+    isDemo || count === 1 ? 0 : SUMMARY_IDX
+  );
 
   const fetchOne = async (i: number) => {
     setLoadingStates((prev) => {
@@ -170,6 +236,7 @@ export default function FeedbackStep({ onRestart }: Props) {
             answer: e.answer.transcript || "（未作答）",
           })),
           resume,
+          jd,
           thinkingTime,
           speakingTime,
         }),
@@ -208,9 +275,33 @@ export default function FeedbackStep({ onRestart }: Props) {
     return () => timers.forEach(clearTimeout);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const currentFeedback = feedbacks[selectedIdx];
-  const isLoading = loadingStates[selectedIdx];
-  const fetchError = fetchErrors[selectedIdx];
+  const isSummary = selectedIdx === SUMMARY_IDX;
+
+  // Summary view aggregates across all loaded feedbacks
+  const summaryFeedback = useMemo(
+    () =>
+      isSummary
+        ? averageFeedback(feedbacks.filter((f): f is Feedback => !!f))
+        : null,
+    [isSummary, feedbacks]
+  );
+  const summaryIsLoading =
+    isSummary && loadingStates.some((l) => l) && feedbacks.every((f) => !f);
+  const summaryHasError =
+    isSummary &&
+    !summaryIsLoading &&
+    !summaryFeedback &&
+    fetchErrors.some((e) => !!e);
+
+  const currentFeedback: Feedback | null = isSummary
+    ? summaryFeedback
+    : feedbacks[selectedIdx] ?? null;
+  const isLoading = isSummary ? summaryIsLoading : loadingStates[selectedIdx];
+  const fetchError = isSummary
+    ? summaryHasError
+      ? "部分题目反馈生成失败，请重试对应题目"
+      : null
+    : fetchErrors[selectedIdx];
   const hasError = !isLoading && !!fetchError && !currentFeedback;
 
   const radarDims = useMemo(
@@ -221,9 +312,21 @@ export default function FeedbackStep({ onRestart }: Props) {
   const gradeLabel = (score: number) =>
     score >= 85 ? "A" : score >= 75 ? "B+" : score >= 65 ? "B" : "C";
 
-  // Exchange count for selected thread (shows follow-up depth)
-  const selectedThread = isDemo ? null : completedThreads[selectedIdx];
+  // Exchange count for selected thread (shows follow-up depth) — only for single question
+  const selectedThread =
+    !isDemo && !isSummary ? completedThreads[selectedIdx] : null;
   const exchangeCount = selectedThread ? selectedThread.exchanges.length : 0;
+
+  // Retry handler — in summary mode, retry all failed; otherwise retry current
+  const handleRetry = () => {
+    if (isSummary) {
+      fetchErrors.forEach((e, i) => {
+        if (e) fetchOne(i);
+      });
+    } else {
+      fetchOne(selectedIdx);
+    }
+  };
 
   return (
     <section className="fade-up max-w-[1240px] mx-auto px-6 lg:px-10 pt-10 pb-20">
@@ -300,9 +403,37 @@ export default function FeedbackStep({ onRestart }: Props) {
         </div>
       </div>
 
-      {/* Question tabs */}
+      {/* Question tabs (with cross-question Summary tab) */}
       {!isDemo && count > 1 && (
         <div className="flex items-center gap-2 mb-6 flex-wrap">
+          {/* Summary tab */}
+          <button
+            onClick={() => setSelectedIdx(SUMMARY_IDX)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-medium transition ${
+              isSummary
+                ? "bg-indigo-600 text-white"
+                : "bg-white ring-1 ring-slate-200 text-slate-600 hover:ring-indigo-300"
+            }`}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              className="w-3.5 h-3.5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <rect x="3" y="3" width="7" height="9" />
+              <rect x="14" y="3" width="7" height="5" />
+              <rect x="14" y="12" width="7" height="9" />
+              <rect x="3" y="16" width="7" height="5" />
+            </svg>
+            <span>汇总</span>
+          </button>
+
+          <div className="w-px h-5 bg-slate-200 mx-1" />
+
           {completedThreads.map((thread, i) => (
             <button
               key={i}
@@ -393,29 +524,55 @@ export default function FeedbackStep({ onRestart }: Props) {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Summary tab subtitle */}
+      {isSummary && !isLoading && currentFeedback && (
+        <div className="mb-4 flex items-center gap-2 text-[12px] text-slate-500">
+          <svg
+            viewBox="0 0 24 24"
+            className="w-3.5 h-3.5 text-indigo-500"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M3 3v18h18" />
+            <polyline points="7 14 11 10 15 13 21 7" />
+          </svg>
+          <span>
+            已综合 {feedbacks.filter((f) => !!f).length} / {count} 题反馈，下方为整体能力画像
+          </span>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-[25fr_45fr_30fr] gap-6 lg:h-[640px]">
         {hasError ? (
-          <ErrorCard message={fetchError!} onRetry={() => fetchOne(selectedIdx)} />
+          <ErrorCard message={fetchError!} onRetry={handleRetry} />
         ) : (
           <>
-            <FeedbackCard
-              isLoading={isLoading}
-              strengths={currentFeedback?.strengths ?? []}
-              improvements={currentFeedback?.improvements ?? []}
-              modelAnswer={currentFeedback?.modelAnswer ?? ""}
-              thinkingTimeFeedback={currentFeedback?.thinkingTimeFeedback ?? ""}
-            />
+            {/* Column A · Text feedback (优点 / 改进 / 思考节奏) — internal scroll if overflowing */}
+            <div className="lg:overflow-y-auto lg:min-h-0">
+              <FeedbackCard
+                isLoading={isLoading}
+                strengths={currentFeedback?.strengths ?? []}
+                improvements={currentFeedback?.improvements ?? []}
+                thinkingTimeFeedback={currentFeedback?.thinkingTimeFeedback ?? ""}
+              />
+            </div>
 
+            {/* Column B · Radar chart only — no scroll, radar fills available space */}
             {isLoading || !currentFeedback ? (
               <RadarCardSkeleton />
             ) : (
-              <div className="bg-white rounded-2xl ring-1 ring-slate-200 ring-soft p-6 flex flex-col">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="text-[14px] font-semibold">能力雷达</div>
+              <div className="bg-white rounded-2xl ring-1 ring-slate-200 ring-soft p-6 flex flex-col gap-4 lg:min-h-0 lg:overflow-hidden">
+                <div className="flex items-center justify-between shrink-0">
+                  <div className="text-[14px] font-semibold">
+                    {isSummary ? "综合能力雷达" : "能力雷达"}
+                  </div>
                   <div className="flex items-center gap-3 text-[11px] text-slate-400">
                     <span className="flex items-center gap-1">
                       <span className="w-2 h-2 rounded-sm bg-indigo-600" />
-                      本次表现
+                      {isSummary ? "平均表现" : "本次表现"}
                     </span>
                     <span className="flex items-center gap-1">
                       <span className="w-2 h-2 rounded-sm bg-slate-200" />
@@ -424,25 +581,63 @@ export default function FeedbackStep({ onRestart }: Props) {
                   </div>
                 </div>
 
-                <div className="flex-1 flex items-center justify-center -my-2">
+                <div className="flex-1 flex items-center justify-center min-h-0">
                   <RadarChart dims={radarDims} centerScore={currentFeedback.overallScore} />
                 </div>
+              </div>
+            )}
 
-                <div className="grid grid-cols-5 gap-2 pt-2 border-t border-slate-100">
-                  {radarDims.map((d, i) => (
-                    <div key={i} className="text-center">
-                      <div className="text-[10px] text-slate-400 truncate">{d.key}</div>
-                      <div className="text-[15px] font-mono font-semibold tabular-nums text-slate-900 mt-0.5">
-                        {d.value}
-                      </div>
-                      <div className="mt-1 h-1 bg-slate-100 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-indigo-500 rounded-full"
-                          style={{ width: `${d.value}%` }}
-                        />
-                      </div>
+            {/* Column C · Per-dimension detail list — fixed header + internal scroll */}
+            {isLoading || !currentFeedback ? (
+              <div className="bg-white rounded-2xl ring-1 ring-slate-200 ring-soft flex flex-col lg:min-h-0 lg:overflow-hidden">
+                <div className="px-6 pt-6 pb-3 border-b border-slate-100 shrink-0">
+                  <Sk className="h-4 w-20" />
+                </div>
+                <div className="flex-1 px-6 py-5 space-y-5 lg:overflow-y-auto lg:min-h-0">
+                  {[0, 1, 2, 3, 4].map((i) => (
+                    <div key={i} className="space-y-2">
+                      <Sk className="h-3.5 w-32" />
+                      <Sk className="h-3 w-full" />
+                      <Sk className="h-3 w-4/5" />
                     </div>
                   ))}
+                </div>
+              </div>
+            ) : (
+              <div className="bg-white rounded-2xl ring-1 ring-slate-200 ring-soft flex flex-col lg:min-h-0 lg:overflow-hidden">
+                {/* Fixed header */}
+                <div className="text-[14px] font-semibold px-6 pt-6 pb-3 border-b border-slate-100 shrink-0">
+                  维度详情
+                </div>
+
+                {/* Scrolling body */}
+                <div className="flex-1 px-6 py-5 space-y-5 lg:overflow-y-auto lg:min-h-0">
+                  {DIM_KEYS.map((dimKey) => {
+                    const score = currentFeedback.dimensions[dimKey];
+                    const bullets = currentFeedback.dimensionDetails[dimKey];
+                    return (
+                      <div key={dimKey}>
+                        <div className="text-[13px] font-medium text-slate-800 mb-2">
+                          {DIMENSION_LABELS[dimKey]}
+                          <span className="ml-1.5 font-mono font-semibold tabular-nums text-slate-900">
+                            ({score}
+                            <span className="text-slate-400">/100</span>)
+                          </span>
+                        </div>
+                        <ul className="space-y-1.5">
+                          {bullets.map((b, j) => (
+                            <li
+                              key={j}
+                              className="flex gap-2.5 text-[13px] leading-relaxed text-slate-700"
+                            >
+                              <span className="block w-1 h-1 rounded-full bg-indigo-400 shrink-0 mt-[9px]" />
+                              <span>{b}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}

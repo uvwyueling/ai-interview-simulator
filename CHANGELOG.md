@@ -6,6 +6,49 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.2] — 2026-05-28
+
+### Changed
+- **Feedback page grid now locks all three columns to a fixed `640px` height on `lg+` screens** so they remain visually aligned. Previously the radar (column B) would "sink" vertically because column C's tall content stretched the grid row and the radar's `flex-1 items-center` centered itself in the extra space
+- **Column C (维度详情) restructured into "fixed header + scrollable body"** — the "维度详情" title now stays anchored at the top of the card while the bullet content scrolls inside. Replaces the earlier fragile `sticky / -mx-6` approach with a clean two-section flex layout
+- **Column A (FeedbackCard) wrapped in a scroll container** with `lg:overflow-y-auto lg:min-h-0` so longer strengths / improvements lists scroll inside the column instead of overflowing the grid
+- Column B (radar) given `lg:overflow-hidden` + `min-h-0` so the radar stays neatly framed within its column height and never pushes neighbours
+
+### Notes
+- Mobile / small screens (`< lg`) keep the natural stacked layout with no fixed heights — only desktop gets the locked grid
+
+---
+
+## [0.3.1] — 2026-05-28
+
+### Changed
+- **Feedback page redesigned from 2-column to 3-column layout (25 : 45 : 30)** — text feedback / radar chart / dimension details are now three independent siblings, giving each region the horizontal space it actually needs. Previously the per-dimension details sat below the radar in a shared right column, which buried the most actionable content
+- Radar chart enlarged (`max-w-[400px] → 480px`) and now occupies the full vertical space of the middle column for stronger visual presence
+- Dimension detail rows simplified: the redundant purple progress bar is removed; score now reads inline as `沟通能力 (82/100)`, freeing more breathing room for the bullet evidence
+- Dimension detail bullets bumped from `text-[12px] → text-[13px]` to match the strengths / improvements bullets in column A — consistent reading rhythm across the page
+- `ErrorCard` updated to span 3 columns (was 2) to remain full-width inside the new grid
+- New loading skeleton for the dimension details column so the page no longer feels lopsided while feedbacks stream in
+
+---
+
+## [0.3.0] — 2026-05-28
+
+### Added
+- **Cross-question summary tab in `FeedbackStep`** — when more than one main question has been completed, a "汇总" tab is shown first by default. It aggregates per-dimension scores via averaging, merges all per-dimension bullet evaluations across questions, and deduplicates strengths / improvements to give the user a single overall capability picture
+- **Per-dimension bullet evaluations** — `Feedback.dimensionDetails` now carries 2–3 grounded bullet points for each of the five dimensions (沟通能力 / 技术深度 / 逻辑思维 / 表达清晰度 / 岗位匹配度). Bullets must quote concrete answer fragments or résumé experiences and reference JD requirements — no generic platitudes
+- Radar card now renders an interactive per-dimension detail list (dimension name + score + progress bar + bullet evidence) replacing the previous compact 5-column footer
+
+### Changed
+- **`/api/generate-feedback` system prompt rewritten**: removed the `modelAnswer` requirement (it was lengthy and pushed the radar below the fold), added strict instructions for the new `dimensionDetails` field, and now requires JD context for the `jobFit` dimension
+- `/api/generate-feedback` request schema now requires `jd`; `FeedbackStep` updated to forward `jd` from `InterviewContext`
+- `Feedback` type: `modelAnswer` removed; `dimensionDetails: DimensionDetails` added (5 keys mirroring `FeedbackDimensions`, each an array of bullet strings)
+- `FeedbackCard` no longer renders the "示范回答" section — the radar chart now appears almost immediately after the page loads, addressing the perceived slowness
+
+### Removed
+- "示范回答" module from the feedback page and from the LLM output schema (token cost reduced, generation latency improved)
+
+---
+
 ## [0.2.1] — 2026-05-28
 
 ### Added

@@ -15,9 +15,12 @@ const RequestSchema = z.object({
     )
     .min(1, "对话记录不能为空"),
   resume: z.string().min(1, "简历不能为空"),
+  jd: z.string().min(1, "岗位描述不能为空"),
   thinkingTime: z.number().min(0),
   speakingTime: z.number().min(0),
 });
+
+const DimensionBullets = z.array(z.string().min(1)).min(2).max(3);
 
 const FeedbackSchema = z.object({
   overallScore: z.number().int().min(0).max(100),
@@ -28,9 +31,15 @@ const FeedbackSchema = z.object({
     clarity: z.number().int().min(0).max(100),
     jobFit: z.number().int().min(0).max(100),
   }),
+  dimensionDetails: z.object({
+    communication: DimensionBullets,
+    technicalDepth: DimensionBullets,
+    logicalThinking: DimensionBullets,
+    clarity: DimensionBullets,
+    jobFit: DimensionBullets,
+  }),
   strengths: z.array(z.string().min(1)).min(1).max(5),
   improvements: z.array(z.string().min(1)).min(1).max(5),
-  modelAnswer: z.string().min(1),
   thinkingTimeFeedback: z.string().min(1),
 });
 
@@ -67,9 +76,13 @@ function buildSystemPrompt(thinkingTimeMs: number, speakingTimeMs: number): stri
 - clarity（表达清晰度）：重点是否突出、是否简洁有力
 - jobFit（岗位匹配度）：回答是否契合岗位核心要求
 
-【modelAnswer 要求】
-必须结合候选人简历中的真实经历来定制，不允许给通用答案。
-展示如何将简历中的具体项目/成就套入 STAR 结构（情境-任务-行动-结果）来回答主问题（包括应对追问的思路）。
+【dimensionDetails 要求】★ 重要
+不要写空洞通用语（如"沟通流畅、表达清晰"），必须**援引候选人的具体回答片段或简历经历**作为证据，并指出与 JD 的对应关系。
+
+每个维度输出 2–3 条 bullet（每条 25–60 字），覆盖以下角度任选其二：
+1. 这一维度上候选人**做得好的具体行为或表达**（引用回答中的关键句/技术名词/项目细节）
+2. 这一维度上**暴露出的不足**（哪一句、哪个环节本可以更好）
+3. 结合 JD 要求**给出具体可执行的改进动作**（不是空泛的"加强沟通"，而是"下次可以在介绍架构前用一句话定位读者，例如…"）
 
 【输出格式】
 严格输出以下 JSON，不要包含任何其他文字、注释或 markdown 标记：
@@ -82,9 +95,15 @@ function buildSystemPrompt(thinkingTimeMs: number, speakingTimeMs: number): stri
     "clarity": <0-100 整数>,
     "jobFit": <0-100 整数>
   },
+  "dimensionDetails": {
+    "communication": ["针对沟通能力的具体评价1（援引回答证据）", "针对沟通能力的具体评价2"],
+    "technicalDepth": ["针对技术深度的具体评价1", "针对技术深度的具体评价2"],
+    "logicalThinking": ["针对逻辑思维的具体评价1", "针对逻辑思维的具体评价2"],
+    "clarity": ["针对表达清晰度的具体评价1", "针对表达清晰度的具体评价2"],
+    "jobFit": ["针对岗位匹配度的具体评价1（结合 JD）", "针对岗位匹配度的具体评价2"]
+  },
   "strengths": ["具体优点1", "具体优点2"],
   "improvements": ["具体改进建议1", "具体改进建议2"],
-  "modelAnswer": "结合候选人简历经历的定制示范回答...",
   "thinkingTimeFeedback": "关于思考节奏的个性化反馈..."
 }`;
 }
@@ -172,7 +191,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: messages }, { status: 400 });
   }
 
-  const { mainQuestion, thread, thinkingTime, speakingTime, resume } = parseResult.data;
+  const { mainQuestion, thread, thinkingTime, speakingTime, resume, jd } = parseResult.data;
 
   const threadText = thread
     .map(
@@ -182,7 +201,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     .join("\n\n");
 
   const systemPrompt = buildSystemPrompt(thinkingTime, speakingTime);
-  const userMessage = `【主面试问题】\n${mainQuestion}\n\n【完整对话记录（含追问）】\n${threadText}\n\n【候选人简历】\n${resume}`;
+  const userMessage = `【主面试问题】\n${mainQuestion}\n\n【完整对话记录（含追问）】\n${threadText}\n\n【候选人简历】\n${resume}\n\n【岗位 JD】\n${jd}`;
 
   try {
     const feedback = await callWithRetry(systemPrompt, userMessage);

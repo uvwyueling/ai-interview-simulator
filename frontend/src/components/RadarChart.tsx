@@ -52,7 +52,7 @@ export default function RadarChart({
     .join(" ");
 
   return (
-    <svg viewBox={`0 0 ${size} ${size}`} className="w-full max-w-[400px]">
+    <svg viewBox={`0 0 ${size} ${size}`} className="w-full max-w-[480px]">
       {/* Grid rings */}
       {levels.map((l, i) => (
         <polygon
