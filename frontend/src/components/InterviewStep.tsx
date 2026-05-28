@@ -130,6 +130,7 @@ export default function InterviewStep() {
     setIsJudging,
     setPendingFollowUp,
     advanceToNext,
+    jumpToStep,
   } = useInterview();
 
   const [speechSupported, setSpeechSupported] = useState(true);
@@ -371,6 +372,40 @@ export default function InterviewStep() {
 
   return (
     <section className="fade-up max-w-[1240px] mx-auto px-6 lg:px-10 pt-10 pb-16">
+      {/* Demo data notice */}
+      {isDemo && (
+        <div className="mb-6 flex items-center justify-between gap-4 px-5 py-3.5 bg-amber-50 border border-amber-200 rounded-xl">
+          <div className="flex items-start gap-3">
+            <svg
+              viewBox="0 0 24 24"
+              className="w-4 h-4 shrink-0 mt-0.5 text-amber-600"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+            <div>
+              <div className="text-[13px] font-semibold text-amber-900">
+                示例数据 · 仅供预览
+              </div>
+              <div className="text-[12px] text-amber-800/80 mt-0.5">
+                这是一份虚拟简历与岗位生成的演示。想体验真实 AI 面试评测，请返回上传你的简历与 JD。
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={() => jumpToStep("input")}
+            className="shrink-0 text-[12px] font-medium px-3.5 py-1.5 rounded-lg bg-white ring-1 ring-amber-300 text-amber-900 hover:bg-amber-100 transition whitespace-nowrap"
+          >
+            返回上传 →
+          </button>
+        </div>
+      )}
+
       {/* Browser compatibility warning */}
       {!speechSupported && (
         <div className="mb-6 flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-[13px] text-amber-900">

@@ -6,6 +6,17 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.1] — 2026-05-28
+
+### Added
+- Prominent "示例数据 · 仅供预览" notice banner at the top of `InterviewStep` (when entered via demo jumper) and `FeedbackStep` (when no real interview has been completed) — explains that the displayed content is mock data and provides a "返回上传 →" CTA back to the input step
+- `jumpToStep` action now consumed inside `InterviewStep` and `FeedbackStep` to power the banner's back-to-input button
+
+### Changed
+- Clarified the HR / first-time-visitor experience: demo previews are preserved (so reviewers can grasp the product within ~1 minute) but are now unambiguously labelled, preventing the previous risk of HR mistaking mock data for personalised AI output
+
+---
+
 ## [0.2.0] — 2026-05-26
 
 ### Added

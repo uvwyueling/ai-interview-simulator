@@ -110,7 +110,7 @@ type Props = {
 };
 
 export default function FeedbackStep({ onRestart }: Props) {
-  const { completedThreads, resume } = useInterview();
+  const { completedThreads, resume, jumpToStep } = useInterview();
   const isDemo = completedThreads.length === 0;
   const count = isDemo ? 1 : completedThreads.length;
 
@@ -227,6 +227,40 @@ export default function FeedbackStep({ onRestart }: Props) {
 
   return (
     <section className="fade-up max-w-[1240px] mx-auto px-6 lg:px-10 pt-10 pb-20">
+      {/* Demo data notice */}
+      {isDemo && (
+        <div className="mb-6 flex items-center justify-between gap-4 px-5 py-3.5 bg-amber-50 border border-amber-200 rounded-xl">
+          <div className="flex items-start gap-3">
+            <svg
+              viewBox="0 0 24 24"
+              className="w-4 h-4 shrink-0 mt-0.5 text-amber-600"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+            <div>
+              <div className="text-[13px] font-semibold text-amber-900">
+                示例反馈 · 仅供预览
+              </div>
+              <div className="text-[12px] text-amber-800/80 mt-0.5">
+                以下评分、雷达图与改进建议均为演示内容。完成一次真实面试即可获得基于你回答的专属反馈。
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={() => jumpToStep("input")}
+            className="shrink-0 text-[12px] font-medium px-3.5 py-1.5 rounded-lg bg-white ring-1 ring-amber-300 text-amber-900 hover:bg-amber-100 transition whitespace-nowrap"
+          >
+            返回上传 →
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-8">
         <div>
