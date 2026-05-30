@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
+import { MODELS } from "@/lib/models";
 
 const RequestSchema = z.object({
   resume: z.string().min(1, "简历内容不能为空"),
@@ -53,8 +54,8 @@ async function callWithRetry(userMessage: string, maxAttempts = 3) {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       const message = await client.messages.create({
-        model: "claude-haiku-4-5",
-        max_tokens: 2048,
+        model: MODELS.standard,
+        max_tokens: 1024,
         system: SYSTEM_PROMPT,
         messages: [{ role: "user", content: userMessage }],
       });

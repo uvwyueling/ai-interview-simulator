@@ -6,6 +6,18 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.3] — 2026-05-30
+
+### Added
+- `src/lib/models.ts` — centralised model routing config; all API routes now import from here instead of hardcoding model strings
+
+### Changed
+- **Mixed-model strategy implemented**: `generate-followup` stays on `claude-haiku-4-5` (speed-critical, binary output); `generate-questions` and `generate-feedback` upgraded to `claude-sonnet-4-6` (quality-critical, main deliverable)
+- `generate-questions` `max_tokens` reduced from 2048 → 1024 (sonnet is more reliable; 3-question JSON fits easily)
+- `generate-feedback` `max_tokens` reduced from 3000 → 2000 (sonnet output is more concise; feedback JSON stays well under 1200 tokens in practice)
+
+---
+
 ## [0.3.2] — 2026-05-28
 
 ### Changed

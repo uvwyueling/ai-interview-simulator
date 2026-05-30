@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
+import { MODELS } from "@/lib/models";
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -56,7 +57,7 @@ async function callWithRetry(userMessage: string, maxAttempts = 2) {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       const message = await client.messages.create({
-        model: "claude-haiku-4-5",
+        model: MODELS.lightweight,
         max_tokens: 512,
         system: SYSTEM_PROMPT,
         messages: [{ role: "user", content: userMessage }],
