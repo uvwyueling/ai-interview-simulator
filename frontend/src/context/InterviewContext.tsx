@@ -1,9 +1,63 @@
 "use client";
 
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useRef, type ReactNode } from "react";
 import type { Question, Exchange, QuestionThread } from "@/types/interview";
 
 type Step = "input" | "interview" | "feedback";
+
+// ── sessionStorage persistence ────────────────────────────────────────────────
+//
+// What IS persisted:   all data the user would lose on refresh
+// What is NOT:         isJudging (in-flight API state — can't resume after refresh)
+//
+// Effect ordering contract (critical):
+//   The SAVE effect must be declared BEFORE the HYDRATE effect so React runs it
+//   first on initial mount.  On first mount, isHydrated.current is still false,
+//   so the save skips — preventing the default blank state from overwriting the
+//   stored session before hydration can read it.
+
+const SESSION_KEY = "ai_interview_session";
+
+type PersistedState = {
+  step: Step;
+  resume: string;
+  jd: string;
+  questions: Question[];
+  isDemo: boolean;
+  currentMainIndex: number;
+  currentExchanges: Exchange[];
+  pendingFollowUpQuestion: string | null;
+  completedThreads: QuestionThread[];
+};
+
+function readSession(): PersistedState | null {
+  if (typeof window === "undefined") return null; // SSR guard
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as PersistedState;
+  } catch {
+    return null; // corrupt data — start fresh
+  }
+}
+
+function writeSession(state: PersistedState): void {
+  try {
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(state));
+  } catch {
+    // quota exceeded or private-browsing restrictions — fail silently
+  }
+}
+
+function clearSession(): void {
+  try {
+    sessionStorage.removeItem(SESSION_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+// ── Context types ─────────────────────────────────────────────────────────────
 
 type InterviewState = {
   step: Step;
@@ -13,18 +67,13 @@ type InterviewState = {
   isDemo: boolean;
   currentMainIndex: number;        // 0–2
   currentExchanges: Exchange[];    // exchanges for the current main question
-  isJudging: boolean;              // follow-up API call in progress
-  pendingFollowUpQuestion: string | null;  // follow-up question text from LLM
-  completedThreads: QuestionThread[];     // finalised threads (used by FeedbackStep)
+  isJudging: boolean;              // follow-up API call in progress (not persisted)
+  pendingFollowUpQuestion: string | null;
+  completedThreads: QuestionThread[];
 };
 
 type InterviewActions = {
-  startInterview: (
-    questions: Question[],
-    resume: string,
-    jd: string,
-    isDemo: boolean
-  ) => void;
+  startInterview: (questions: Question[], resume: string, jd: string, isDemo: boolean) => void;
   /** Add one exchange to the current question's history (for display). */
   appendExchange: (exchange: Exchange) => void;
   setIsJudging: (v: boolean) => void;
@@ -41,6 +90,8 @@ type InterviewActions = {
 
 const InterviewContext = createContext<(InterviewState & InterviewActions) | null>(null);
 
+// ── Provider ──────────────────────────────────────────────────────────────────
+
 export function InterviewProvider({ children }: { children: ReactNode }) {
   const [step, setStep] = useState<Step>("input");
   const [resume, setResume] = useState("");
@@ -49,16 +100,54 @@ export function InterviewProvider({ children }: { children: ReactNode }) {
   const [isDemo, setIsDemo] = useState(false);
   const [currentMainIndex, setCurrentMainIndex] = useState(0);
   const [currentExchanges, setCurrentExchanges] = useState<Exchange[]>([]);
-  const [isJudging, setIsJudgingState] = useState(false);
+  const [isJudging, setIsJudgingState] = useState(false); // never persisted
   const [pendingFollowUpQuestion, setPendingFollowUpState] = useState<string | null>(null);
   const [completedThreads, setCompletedThreads] = useState<QuestionThread[]>([]);
 
-  const startInterview = (
-    qs: Question[],
-    res: string,
-    jdText: string,
-    demo: boolean
-  ) => {
+  // Tracks whether we have loaded from sessionStorage.
+  // Using a ref (not state) so toggling it doesn't trigger an extra render.
+  const isHydrated = useRef(false);
+
+  // ── SAVE effect (declared first — runs before hydrate on initial mount) ──────
+  useEffect(() => {
+    if (!isHydrated.current) return; // skip the pre-hydration render
+    writeSession({
+      step,
+      resume,
+      jd,
+      questions,
+      isDemo,
+      currentMainIndex,
+      currentExchanges,
+      pendingFollowUpQuestion,
+      completedThreads,
+    });
+  }, [
+    step, resume, jd, questions, isDemo,
+    currentMainIndex, currentExchanges,
+    pendingFollowUpQuestion, completedThreads,
+  ]);
+
+  // ── HYDRATE effect (declared second — runs after save on initial mount) ──────
+  useEffect(() => {
+    const saved = readSession();
+    if (saved?.step) {
+      setStep(saved.step);
+      setResume(saved.resume ?? "");
+      setJd(saved.jd ?? "");
+      setQuestions(saved.questions ?? []);
+      setIsDemo(saved.isDemo ?? false);
+      setCurrentMainIndex(saved.currentMainIndex ?? 0);
+      setCurrentExchanges(saved.currentExchanges ?? []);
+      setPendingFollowUpState(saved.pendingFollowUpQuestion ?? null);
+      setCompletedThreads(saved.completedThreads ?? []);
+    }
+    isHydrated.current = true;
+  }, []); // runs exactly once on mount
+
+  // ── Actions ───────────────────────────────────────────────────────────────────
+
+  const startInterview = (qs: Question[], res: string, jdText: string, demo: boolean) => {
     setQuestions(qs);
     setResume(res);
     setJd(jdText);
@@ -99,6 +188,7 @@ export function InterviewProvider({ children }: { children: ReactNode }) {
   const jumpToStep = (s: Step) => setStep(s);
 
   const reset = () => {
+    clearSession(); // wipe persisted state so the next session starts clean
     setStep("input");
     setResume("");
     setJd("");

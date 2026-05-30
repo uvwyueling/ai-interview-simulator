@@ -6,6 +6,22 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.4] — 2026-05-30
+
+### Added
+- **sessionStorage persistence for interview state** — all user-facing state (step, resume, JD, questions, in-progress exchanges, completed threads, pending follow-up question) is now written to `sessionStorage` on every change and restored on page load; refreshing mid-interview no longer loses answers
+- `readSession` / `writeSession` / `clearSession` helpers in `InterviewContext` with SSR guard (`typeof window`) and silent-fail error handling for private-browsing / quota restrictions
+
+### Changed
+- `reset()` now calls `clearSession()` so starting a new interview fully wipes the previous session
+- `isJudging` is deliberately **not** persisted — it is transient API-call state that cannot be resumed after a refresh; it always resets to `false`
+
+### Notes
+- Uses `sessionStorage` (not `localStorage`) — state is scoped to the current browser tab and cleared automatically when the tab is closed, preventing stale data from surfacing in future visits
+- Effect ordering in `InterviewProvider` is load-bearing: the save effect is declared **before** the hydration effect so React runs it first on initial mount; at that point `isHydrated.current` is still `false`, so the save is skipped — preventing blank defaults from overwriting a valid stored session before hydration can read it
+
+---
+
 ## [0.3.3] — 2026-05-30
 
 ### Added
