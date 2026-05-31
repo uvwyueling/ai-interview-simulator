@@ -6,6 +6,20 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.5] — 2026-05-30
+
+### Added
+- **PDF export** — "导出报告 PDF" button opens a print-ready HTML document in a new tab containing the full report (all questions, conversation threads, scores, dimension bars, strengths / improvements / dimension details, thinking-time note); user saves as PDF via the browser's print dialog
+- `src/lib/generateReport.ts` — standalone HTML template generator; zero new npm dependencies (pure inline styles, system fonts with CJK fallback stack)
+- Print hint banner in the generated report guides the user to Ctrl+P / ⌘+P with a one-click "打印 / 保存 PDF" button (hidden when actually printing via `@media print`)
+- Export button shows a spinner and "生成中…" label while feedbacks are still loading; disabled until at least one feedback is ready
+
+### Changed
+- Export button is now active in demo mode (exports the mock feedback so the feature is always demonstrable)
+- Report includes each question's full conversation thread (main Q + all follow-ups) so the PDF is self-contained without needing to open the app
+
+---
+
 ## [0.3.4] — 2026-05-30
 
 ### Added

@@ -6,6 +6,7 @@ import FeedbackCard from "./FeedbackCard";
 import type { Feedback, FeedbackDimensions, DimensionDetails } from "@/types/interview";
 import { feedbackToRadarDims, DIMENSION_LABELS } from "@/types/interview";
 import { useInterview } from "@/context/InterviewContext";
+import { generateReportHTML } from "@/lib/generateReport";
 
 const MOCK_FEEDBACK: Feedback = {
   overallScore: 80,
@@ -326,6 +327,28 @@ export default function FeedbackStep({ onRestart }: Props) {
     } else {
       fetchOne(selectedIdx);
     }
+  };
+
+  // PDF export — opens a print-ready HTML in a new window; user saves as PDF
+  const anyLoading = loadingStates.some(Boolean);
+  const canExport = isDemo || (!anyLoading && feedbacks.some(Boolean));
+
+  const handleExportPDF = () => {
+    const html = generateReportHTML(
+      isDemo ? [] : completedThreads,
+      isDemo ? [MOCK_FEEDBACK] : feedbacks,
+      isDemo
+    );
+    const win = window.open("", "_blank");
+    if (!win) {
+      alert("请允许浏览器打开弹出窗口，然后重试");
+      return;
+    }
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    // Slight delay so the browser finishes parsing before the print dialog opens
+    setTimeout(() => win.print(), 400);
   };
 
   return (
@@ -654,8 +677,28 @@ export default function FeedbackStep({ onRestart }: Props) {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <button className="text-[13px] px-4 py-2 rounded-lg text-slate-700 hover:bg-white transition">
-            导出报告 PDF
+          <button
+            onClick={handleExportPDF}
+            disabled={!canExport}
+            className={`text-[13px] px-4 py-2 rounded-lg transition flex items-center gap-1.5 ${
+              canExport
+                ? "text-slate-700 hover:bg-white"
+                : "text-slate-400 cursor-not-allowed"
+            }`}
+          >
+            {anyLoading && !isDemo ? (
+              <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                <path d="M12 3a9 9 0 1 0 9 9" />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="12" y1="18" x2="12" y2="12" />
+                <line x1="9" y1="15" x2="15" y2="15" />
+              </svg>
+            )}
+            {anyLoading && !isDemo ? "生成中…" : "导出报告 PDF"}
           </button>
           <button
             onClick={onRestart}
