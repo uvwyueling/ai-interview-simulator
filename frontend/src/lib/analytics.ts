@@ -24,12 +24,18 @@ export const EVENTS = {
 
 export type EventName = (typeof EVENTS)[keyof typeof EVENTS];
 
+// "prod" for the deployed Vercel build (next build), "dev" for local `next dev`.
+// NODE_ENV is inlined at build time, so this is a static, zero-config signal.
+// Auto-injected into every event's props → filter with: props->>'env' = 'prod'.
+const APP_ENV: "prod" | "dev" =
+  process.env.NODE_ENV === "production" ? "prod" : "dev";
+
 export function track(event: EventName, props: Record<string, unknown> = {}): void {
   if (typeof window === "undefined") return;
   try {
     const body = JSON.stringify({
       event,
-      props,
+      props: { ...props, env: APP_ENV },
       anonId: getAnonId(),
       sessionId: getSessionId(),
       ts: Date.now(),

@@ -6,6 +6,13 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.1] — 2026-06-08
+
+### Added
+- **Environment tag on analytics events** — `track()` now auto-injects `env: "prod" | "dev"` into every event's `props`, derived from `process.env.NODE_ENV` (zero-config, inlined at build time). Lets analytics separate real production traffic from local testing: `where props->>'env' = 'prod'`. No call-site changes; no DB migration (stored in existing `props` jsonb).
+
+---
+
 ## [0.4.0] — 2026-06-02
 
 ### Added
