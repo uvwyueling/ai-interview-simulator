@@ -6,6 +6,24 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.0] — 2026-06-02
+
+### Added
+- **Analytics foundation (Phase 1)** — anonymous-ID + self-hosted event sink for measuring the product funnel without an account system
+- `src/lib/identity.ts` — anonymous identity: `anonId` (localStorage, persists across visits → returning-user/retention proxy) + `sessionId` (sessionStorage, per-visit → funnel analysis); SSR-guarded, silent-fail in private mode
+- `src/lib/analytics.ts` — fire-and-forget `track(event, props)` client; uses `keepalive` to survive page unload; never throws, never sends PII (lengths/scores/durations/flags only)
+- `src/lib/db.ts` — isolated Supabase (Postgres) data-access layer; uses server-only `SUPABASE_SERVICE_ROLE_KEY`; graceful no-op when env unset; swap-friendly if backend changes
+- `POST /api/track` — validates events with Zod and inserts into Supabase; `GET /api/track` returns per-event counts for dev verification (no PII)
+- Funnel instrumentation across the flow: `input_completed`, `questions_generated`, `interview_started`, `answer_submitted`, `followup_triggered`, `interview_completed`, `feedback_viewed`, `feedback_failed`, `report_exported`
+- `.env.example` documenting required env vars (`ANTHROPIC_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`)
+
+### Notes
+- New dependency: `@supabase/supabase-js`
+- Privacy: analytics events carry only derived metadata — resume / JD / answer raw text is never sent
+- Requires a Supabase project + `events` table + service-role key in `.env.local` (see setup steps); without them the app runs fine and tracking is a silent no-op
+
+---
+
 ## [0.3.5] — 2026-05-30
 
 ### Added

@@ -7,6 +7,7 @@ import type { Feedback, FeedbackDimensions, DimensionDetails } from "@/types/int
 import { feedbackToRadarDims, DIMENSION_LABELS } from "@/types/interview";
 import { useInterview } from "@/context/InterviewContext";
 import { generateReportHTML } from "@/lib/generateReport";
+import { track, EVENTS } from "@/lib/analytics";
 
 const MOCK_FEEDBACK: Feedback = {
   overallScore: 80,
@@ -250,6 +251,7 @@ export default function FeedbackStep({ onRestart }: Props) {
         return n;
       });
     } catch (err) {
+      track(EVENTS.FEEDBACK_FAILED, { index: i });
       setFetchErrors((prev) => {
         const n = [...prev];
         n[i] = err instanceof Error ? err.message : "生成反馈失败";
@@ -265,6 +267,7 @@ export default function FeedbackStep({ onRestart }: Props) {
   };
 
   useEffect(() => {
+    track(EVENTS.FEEDBACK_VIEWED, { isDemo, count });
     if (isDemo) {
       setFeedbacks([MOCK_FEEDBACK]);
       return;
@@ -347,6 +350,7 @@ export default function FeedbackStep({ onRestart }: Props) {
     win.document.write(html);
     win.document.close();
     win.focus();
+    track(EVENTS.REPORT_EXPORTED, { isDemo, questionCount: isDemo ? 1 : completedThreads.length });
     // Slight delay so the browser finishes parsing before the print dialog opens
     setTimeout(() => win.print(), 400);
   };

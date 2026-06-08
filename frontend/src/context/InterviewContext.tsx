@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useRef, type ReactNode } from "react";
 import type { Question, Exchange, QuestionThread } from "@/types/interview";
+import { track, EVENTS } from "@/lib/analytics";
 
 type Step = "input" | "interview" | "feedback";
 
@@ -158,6 +159,7 @@ export function InterviewProvider({ children }: { children: ReactNode }) {
     setIsJudgingState(false);
     setPendingFollowUpState(null);
     setStep("interview");
+    track(EVENTS.INTERVIEW_STARTED, { isDemo: demo, questionCount: qs.length });
   };
 
   const appendExchange = (exchange: Exchange) => {
@@ -182,6 +184,10 @@ export function InterviewProvider({ children }: { children: ReactNode }) {
       setCurrentExchanges([]);
     } else {
       setStep("feedback");
+      track(EVENTS.INTERVIEW_COMPLETED, {
+        isDemo,
+        questionCount: questions.length,
+      });
     }
   };
 

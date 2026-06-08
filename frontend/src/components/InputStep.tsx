@@ -3,6 +3,7 @@
 import { useState, useRef } from "react";
 import { useInterview } from "@/context/InterviewContext";
 import type { Question } from "@/types/interview";
+import { track, EVENTS } from "@/lib/analytics";
 
 const SAMPLE_RESUME = `张同学  ·  应届硕士
 教育: 计算机科学硕士, 2024
@@ -121,12 +122,15 @@ export default function InputStep() {
 
     // Demo fast-path: both inputs are unmodified sample data → skip API call
     if (resume === SAMPLE_RESUME && jd === SAMPLE_JD) {
+      track(EVENTS.INPUT_COMPLETED, { isDemo: true, resumeLen: resume.length, jdLen: jd.length });
       startInterview(pickThree(DEMO_POOL), resume, jd, true);
       return;
     }
 
     // Normal path: call the API
+    track(EVENTS.INPUT_COMPLETED, { isDemo: false, resumeLen: resume.length, jdLen: jd.length });
     setLoading(true);
+    const startedAt = Date.now();
     try {
       const res = await fetch("/api/generate-questions", {
         method: "POST",
@@ -138,6 +142,10 @@ export default function InputStep() {
         setError(data.error || "生成失败，请重试");
         return;
       }
+      track(EVENTS.QUESTIONS_GENERATED, {
+        count: data.questions?.length ?? 0,
+        latencyMs: Date.now() - startedAt,
+      });
       startInterview(data.questions, resume, jd, false);
     } catch {
       setError("网络错误，请检查连接后重试");

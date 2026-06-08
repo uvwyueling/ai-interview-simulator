@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import type { Answer, Exchange, Question } from "@/types/interview";
 import { useInterview } from "@/context/InterviewContext";
+import { track, EVENTS } from "@/lib/analytics";
 
 const MAX_FOLLOWUPS = 3;
 
@@ -293,6 +294,15 @@ export default function InterviewStep() {
     const exchange: Exchange = { question: currentQuestion, answer };
     const newExchanges = [...currentExchanges, exchange];
 
+    track(EVENTS.ANSWER_SUBMITTED, {
+      mainIndex: currentMainIndex,
+      isFollowUp,
+      depth: followUpDepth,
+      durationSec: seconds,
+      answerLen: text.length, // length only — never the answer content
+      isDemo,
+    });
+
     // Update context history immediately (for display)
     appendExchange(exchange);
     setPendingFollowUp(null);
@@ -335,6 +345,10 @@ export default function InterviewStep() {
           followUpQuestion?: string;
         };
         if (data.shouldFollowUp && data.followUpQuestion) {
+          track(EVENTS.FOLLOWUP_TRIGGERED, {
+            mainIndex: currentMainIndex,
+            depth: newExchanges.length,
+          });
           setPendingFollowUp(data.followUpQuestion);
         } else {
           advanceToNext(newExchanges);
