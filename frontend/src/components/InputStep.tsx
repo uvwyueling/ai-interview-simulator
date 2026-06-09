@@ -205,7 +205,10 @@ export default function InputStep() {
             <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
             <path d="M7 11V7a5 5 0 0 1 10 0v4" />
           </svg>
-          <span>简历内容仅用于本次生成面试题与反馈，<span className="text-slate-500 font-medium">不留存、不用于训练</span></span>
+          <span>
+            简历内容仅用于本次生成面试题与反馈，<span className="text-slate-500 font-medium">不留存、不用于训练</span>
+            <a href="/privacy" className="ml-1.5 text-indigo-500 hover:text-indigo-600 underline underline-offset-2">隐私说明</a>
+          </span>
         </div>
       </div>
 
@@ -446,7 +449,7 @@ export default function InputStep() {
         </div>
         <div className="flex items-center gap-1.5">
           <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>{" "}
-          支持中英文双语面试
+          语音作答建议使用 Chrome 桌面端（其他浏览器可改用键盘输入）
         </div>
       </div>
     </section>

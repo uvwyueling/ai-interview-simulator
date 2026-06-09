@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { MODELS } from "@/lib/models";
+import { rateLimit, getClientIp } from "@/lib/rateLimit";
 
 const RequestSchema = z.object({
   resume: z.string().min(1, "简历内容不能为空"),
@@ -99,6 +100,14 @@ async function callWithRetry(userMessage: string, maxAttempts = 3) {
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
+  const rl = rateLimit(`llm:${getClientIp(request)}`, 40, 60_000);
+  if (!rl.ok) {
+    return NextResponse.json(
+      { error: "请求过于频繁，请稍后再试" },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfterSec) } }
+    );
+  }
+
   let body: unknown;
   try {
     body = await request.json();

@@ -88,19 +88,21 @@ function AppContent() {
       {step === "interview" && questions.length > 0 && <InterviewStep />}
       {step === "feedback" && <FeedbackStep onRestart={reset} />}
 
-      {/* Demo step jumper */}
-      <div className="fixed bottom-5 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur ring-1 ring-slate-200 ring-soft rounded-full px-2 py-1.5 flex items-center gap-1 text-[11px] z-30">
-        <span className="px-2 text-slate-400 font-mono">DEMO</span>
-        {STEP_KEYS.map((s, i) => (
-          <button
-            key={s}
-            onClick={() => handleDemoJump(s)}
-            className={`px-3 py-1 rounded-full transition whitespace-nowrap ${step === s ? "bg-indigo-600 text-white" : "text-slate-500 hover:bg-slate-100"}`}
-          >
-            {STEP_LABELS[i]}
-          </button>
-        ))}
-      </div>
+      {/* Demo step jumper — dev only; never shown to real (beta) users */}
+      {process.env.NODE_ENV !== "production" && (
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur ring-1 ring-slate-200 ring-soft rounded-full px-2 py-1.5 flex items-center gap-1 text-[11px] z-30">
+          <span className="px-2 text-slate-400 font-mono">DEMO</span>
+          {STEP_KEYS.map((s, i) => (
+            <button
+              key={s}
+              onClick={() => handleDemoJump(s)}
+              className={`px-3 py-1 rounded-full transition whitespace-nowrap ${step === s ? "bg-indigo-600 text-white" : "text-slate-500 hover:bg-slate-100"}`}
+            >
+              {STEP_LABELS[i]}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

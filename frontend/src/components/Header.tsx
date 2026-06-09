@@ -71,14 +71,6 @@ export default function Header({ step }: { step: number }) {
       <div className="max-w-[1240px] mx-auto px-4 sm:px-6 lg:px-10 h-16 flex items-center justify-between gap-3">
         <Logo />
         <StepBar step={step} />
-        <div className="flex items-center gap-3 shrink-0">
-          <button className="hidden sm:block text-[13px] text-slate-500 hover:text-slate-800 transition">
-            教程
-          </button>
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-200 to-rose-200 grid place-items-center text-[12px] font-semibold text-slate-700">
-            Z
-          </div>
-        </div>
       </div>
     </header>
   );

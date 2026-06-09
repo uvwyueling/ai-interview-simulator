@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { insertEvent, eventCounts, isConfigured } from "@/lib/db";
+import { rateLimit, getClientIp } from "@/lib/rateLimit";
 
 // SQLite/Supabase write needs the Node runtime (not Edge); force dynamic so it
 // is never statically cached.
@@ -22,6 +23,11 @@ const EventSchema = z.object({
 // ─── POST: ingest one event ───────────────────────────────────────────────────
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
+  // Loose cap to prevent flooding the events table; analytics is best-effort.
+  if (!rateLimit(`track:${getClientIp(request)}`, 200, 60_000).ok) {
+    return NextResponse.json({ ok: false, reason: "rate_limited" });
+  }
+
   // Parsing / validation failures should never surface to the user — analytics
   // is best-effort. We still return 200 so the fire-and-forget client is happy.
   let body: unknown;

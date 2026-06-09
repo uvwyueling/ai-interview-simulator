@@ -551,6 +551,19 @@ export default function InterviewStep() {
         </div>
       </div>
 
+      {/* First-time onboarding hint — shown only on the very first question */}
+      {currentMainIndex === 0 && currentExchanges.length === 0 && !isFollowUp && (
+        <div className="mb-6 flex items-start gap-2.5 px-4 py-3 bg-indigo-50/70 rounded-xl text-[13px] text-indigo-900/80 leading-relaxed">
+          <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0 mt-0.5 text-indigo-500" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10" />
+            <path d="M12 16v-4M12 8h.01" />
+          </svg>
+          <span>
+            <span className="font-medium">使用方式：</span>点击麦克风开始作答 · AI 会根据你的回答<span className="font-medium">追问</span>（每题最多 3 次）· 停止录音后可在右侧<span className="font-medium">手动修改文字</span>再提交。
+          </span>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-[1.1fr_1fr] gap-6">
         {/* ── Left: Question + mic (or judging state) ── */}
         <div className="bg-white rounded-2xl ring-1 ring-slate-200 ring-soft p-8 flex flex-col">

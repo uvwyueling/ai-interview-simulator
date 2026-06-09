@@ -6,6 +6,32 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.8.2] — 2026-06-09
+
+### Added
+- **Basic abuse protection** (`lib/rateLimit.ts`) — in-memory per-IP rate limiting on the API routes: a shared 40-req/min cap across the 3 LLM routes (`generate-questions/feedback/followup`) and 200/min on `/api/track`. Returns 429 with `Retry-After`. Best-effort on serverless (documented); back with Upstash/Vercel KV for hard limits at public launch
+- **`/privacy` page** — honest data-use statement (résumé/JD sent to Claude but not stored, voice handled by the browser's recognition service, anonymous analytics in Supabase, no account, no training use). Linked from the input-screen privacy chip ("隐私说明")
+- **First-time onboarding hint** on the interview screen's first question — one line explaining mic answering, follow-ups (max 3), and editable transcript; auto-hides after the first answer
+
+### Notes
+- Pre-beta hardening (P1). Verified against a production build
+
+---
+
+## [0.8.1] — 2026-06-09
+
+### Fixed
+- **DEMO step-jumper no longer ships to production** — the floating "DEMO 输入/面试/反馈" bar (a dev tool) was rendered unconditionally; real users could teleport into the mock feedback page, confusing them and polluting funnel analytics. Now gated behind `process.env.NODE_ENV !== "production"`
+
+### Changed
+- **Removed dead header UI** for beta polish: the no-op "教程" button and the fake "Z" avatar (implied a logged-in account that doesn't exist). Header is now Logo + step bar
+- **Set voice/browser expectations up front** — replaced the vague "支持中英文双语面试" trust badge with "语音作答建议使用 Chrome 桌面端（其他浏览器可改用键盘输入）", since Web Speech is Chrome-only and iPhone Safari users won't get voice
+
+### Notes
+- Pre-beta cleanup (P0). Verified against a production build: no DEMO bar, clean header, browser hint present
+
+---
+
 ## [0.8.0] — 2026-06-09
 
 ### Added
