@@ -174,15 +174,23 @@ type Props = {
 };
 
 export default function FeedbackStep({ onRestart }: Props) {
-  const { completedThreads, resume, jd, jumpToStep } = useInterview();
+  const {
+    completedThreads,
+    resume,
+    jd,
+    jumpToStep,
+    feedbacks,
+    setFeedbackAt,
+    feedbackViewedTracked,
+    markFeedbackViewed,
+  } = useInterview();
   const isDemo = completedThreads.length === 0;
   const count = isDemo ? 1 : completedThreads.length;
 
-  const [feedbacks, setFeedbacks] = useState<(Feedback | null)[]>(() =>
-    new Array(count).fill(null)
-  );
+  // `feedbacks` lives in (persisted) context — a refresh restores already-generated
+  // results, so loading state starts false for anything already cached.
   const [loadingStates, setLoadingStates] = useState<boolean[]>(() =>
-    new Array(count).fill(!isDemo)
+    Array.from({ length: count }, (_, i) => !isDemo && !feedbacks[i])
   );
   const [fetchErrors, setFetchErrors] = useState<(string | null)[]>(() =>
     new Array(count).fill(null)
@@ -245,11 +253,7 @@ export default function FeedbackStep({ onRestart }: Props) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "生成反馈失败");
-      setFeedbacks((prev) => {
-        const n = [...prev];
-        n[i] = data as Feedback;
-        return n;
-      });
+      setFeedbackAt(i, data as Feedback);
     } catch (err) {
       track(EVENTS.FEEDBACK_FAILED, { index: i });
       setFetchErrors((prev) => {
@@ -267,15 +271,27 @@ export default function FeedbackStep({ onRestart }: Props) {
   };
 
   useEffect(() => {
-    track(EVENTS.FEEDBACK_VIEWED, { isDemo, count });
+    // H3: fire feedback_viewed once per interview, not on every refresh.
+    if (!feedbackViewedTracked) {
+      track(EVENTS.FEEDBACK_VIEWED, { isDemo, count });
+      markFeedbackViewed();
+    }
+
     if (isDemo) {
-      setFeedbacks([MOCK_FEEDBACK]);
+      if (!feedbacks[0]) setFeedbackAt(0, MOCK_FEEDBACK);
       return;
     }
-    // Stagger requests by 1.2 s each to avoid rate limits
-    const timers = completedThreads.map((_, i) =>
-      setTimeout(() => fetchOne(i), i * 1200)
-    );
+
+    // H1: only request threads without a cached result (refresh-safe → no re-spend).
+    // Stagger the actual requests by 1.2 s each to avoid rate limits.
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    let delay = 0;
+    completedThreads.forEach((_, i) => {
+      if (feedbacks[i]) return; // already generated → reuse, don't re-fetch
+      const at = delay;
+      timers.push(setTimeout(() => fetchOne(i), at));
+      delay += 1200;
+    });
     return () => timers.forEach(clearTimeout);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

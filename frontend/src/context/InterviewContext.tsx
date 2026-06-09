@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, useEffect, useRef, type ReactNode } from "react";
-import type { Question, Exchange, QuestionThread } from "@/types/interview";
+import type { Question, Exchange, QuestionThread, Feedback } from "@/types/interview";
 import { track, EVENTS } from "@/lib/analytics";
 
 type Step = "input" | "interview" | "feedback";
@@ -29,6 +29,12 @@ type PersistedState = {
   currentExchanges: Exchange[];
   pendingFollowUpQuestion: string | null;
   completedThreads: QuestionThread[];
+  // Persisted so a refresh on the feedback page does NOT re-generate (re-spend on)
+  // every question's feedback. Indexed by main-question/thread index.
+  feedbacks: (Feedback | null)[];
+  // Persisted so `feedback_viewed` is counted once per interview, not on every
+  // refresh of the feedback page.
+  feedbackViewedTracked: boolean;
 };
 
 function readSession(): PersistedState | null {
@@ -71,6 +77,8 @@ type InterviewState = {
   isJudging: boolean;              // follow-up API call in progress (not persisted)
   pendingFollowUpQuestion: string | null;
   completedThreads: QuestionThread[];
+  feedbacks: (Feedback | null)[];  // per-thread feedback results (persisted)
+  feedbackViewedTracked: boolean;  // whether feedback_viewed has fired this interview
 };
 
 type InterviewActions = {
@@ -79,6 +87,10 @@ type InterviewActions = {
   appendExchange: (exchange: Exchange) => void;
   setIsJudging: (v: boolean) => void;
   setPendingFollowUp: (q: string | null) => void;
+  /** Store one thread's feedback result (auto-grows the array). */
+  setFeedbackAt: (index: number, feedback: Feedback) => void;
+  /** Mark feedback_viewed as already tracked for this interview. */
+  markFeedbackViewed: () => void;
   /**
    * Finalise the current main question with the given exchanges, then
    * advance to the next main question or go to the feedback step.
@@ -104,6 +116,8 @@ export function InterviewProvider({ children }: { children: ReactNode }) {
   const [isJudging, setIsJudgingState] = useState(false); // never persisted
   const [pendingFollowUpQuestion, setPendingFollowUpState] = useState<string | null>(null);
   const [completedThreads, setCompletedThreads] = useState<QuestionThread[]>([]);
+  const [feedbacks, setFeedbacks] = useState<(Feedback | null)[]>([]);
+  const [feedbackViewedTracked, setFeedbackViewedTracked] = useState(false);
 
   // Tracks whether we have loaded from sessionStorage.
   // Using a ref (not state) so toggling it doesn't trigger an extra render.
@@ -122,11 +136,14 @@ export function InterviewProvider({ children }: { children: ReactNode }) {
       currentExchanges,
       pendingFollowUpQuestion,
       completedThreads,
+      feedbacks,
+      feedbackViewedTracked,
     });
   }, [
     step, resume, jd, questions, isDemo,
     currentMainIndex, currentExchanges,
     pendingFollowUpQuestion, completedThreads,
+    feedbacks, feedbackViewedTracked,
   ]);
 
   // ── HYDRATE effect (declared second — runs after save on initial mount) ──────
@@ -142,6 +159,8 @@ export function InterviewProvider({ children }: { children: ReactNode }) {
       setCurrentExchanges(saved.currentExchanges ?? []);
       setPendingFollowUpState(saved.pendingFollowUpQuestion ?? null);
       setCompletedThreads(saved.completedThreads ?? []);
+      setFeedbacks(saved.feedbacks ?? []);
+      setFeedbackViewedTracked(saved.feedbackViewedTracked ?? false);
     }
     isHydrated.current = true;
   }, []); // runs exactly once on mount
@@ -156,6 +175,8 @@ export function InterviewProvider({ children }: { children: ReactNode }) {
     setCurrentMainIndex(0);
     setCurrentExchanges([]);
     setCompletedThreads([]);
+    setFeedbacks([]);
+    setFeedbackViewedTracked(false);
     setIsJudgingState(false);
     setPendingFollowUpState(null);
     setStep("interview");
@@ -168,6 +189,17 @@ export function InterviewProvider({ children }: { children: ReactNode }) {
 
   const setIsJudging = (v: boolean) => setIsJudgingState(v);
   const setPendingFollowUp = (q: string | null) => setPendingFollowUpState(q);
+
+  const setFeedbackAt = (index: number, feedback: Feedback) => {
+    setFeedbacks((prev) => {
+      const n = [...prev];
+      while (n.length <= index) n.push(null);
+      n[index] = feedback;
+      return n;
+    });
+  };
+
+  const markFeedbackViewed = () => setFeedbackViewedTracked(true);
 
   const advanceToNext = (finalExchanges: Exchange[]) => {
     const thread: QuestionThread = {
@@ -203,6 +235,8 @@ export function InterviewProvider({ children }: { children: ReactNode }) {
     setCurrentMainIndex(0);
     setCurrentExchanges([]);
     setCompletedThreads([]);
+    setFeedbacks([]);
+    setFeedbackViewedTracked(false);
     setIsJudgingState(false);
     setPendingFollowUpState(null);
   };
@@ -220,10 +254,14 @@ export function InterviewProvider({ children }: { children: ReactNode }) {
         isJudging,
         pendingFollowUpQuestion,
         completedThreads,
+        feedbacks,
+        feedbackViewedTracked,
         startInterview,
         appendExchange,
         setIsJudging,
         setPendingFollowUp,
+        setFeedbackAt,
+        markFeedbackViewed,
         advanceToNext,
         jumpToStep,
         reset,

@@ -6,6 +6,19 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.2] — 2026-06-08
+
+### Fixed
+- **Refreshing the feedback page no longer re-generates all feedback** (H1) — feedback results are now persisted in `InterviewContext` (sessionStorage) per thread. On refresh, already-generated feedback is restored and reused; only threads without a cached result are requested. Previously a refresh re-called `/api/generate-feedback` for every question, costing extra LLM spend and making the user wait again
+- **`feedback_viewed` is now counted once per interview, not on every refresh** (H3) — guarded by a persisted `feedbackViewedTracked` flag, fixing inflated funnel numbers
+
+### Changed
+- `InterviewContext` now owns `feedbacks` (per-thread results) and `feedbackViewedTracked`; both are persisted and reset on `startInterview` / `reset`. New actions: `setFeedbackAt(index, feedback)`, `markFeedbackViewed()`
+- `FeedbackStep` reads feedbacks from context instead of local state; mount effect skips threads that already have a cached result and staggers only the requests it actually makes
+- `TODO.md` refreshed to reflect actual progress (deploy, loading states, demo data, persistence, PDF export, analytics all done; remaining items reorganized by priority)
+
+---
+
 ## [0.4.1] — 2026-06-08
 
 ### Added
