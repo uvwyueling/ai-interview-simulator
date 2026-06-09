@@ -280,6 +280,7 @@ export default function FeedbackStep({ onRestart }: Props) {
       0
     );
 
+    const startedAt = Date.now();
     try {
       const res = await fetch("/api/generate-feedback", {
         method: "POST",
@@ -299,8 +300,13 @@ export default function FeedbackStep({ onRestart }: Props) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "生成反馈失败");
       setFeedbackAt(i, data as Feedback);
+      track(EVENTS.FEEDBACK_GENERATED, {
+        index: i,
+        latencyMs: Date.now() - startedAt,
+        exchanges: thread.exchanges.length,
+      });
     } catch (err) {
-      track(EVENTS.FEEDBACK_FAILED, { index: i });
+      track(EVENTS.FEEDBACK_FAILED, { index: i, latencyMs: Date.now() - startedAt });
       setFetchErrors((prev) => {
         const n = [...prev];
         n[i] = err instanceof Error ? err.message : "生成反馈失败";

@@ -145,6 +145,9 @@ export default function InterviewStep() {
   const liveRef = useRef<HTMLDivElement>(null);
   const questionStartRef = useRef(Date.now());
   const thinkingTimeMsRef = useRef(0);
+  // Cumulative chars contributed by speech recognition (final results), used to
+  // estimate how much the user edited the transcript: asrChars vs final length.
+  const asrCharsRef = useRef(0);
 
   // Derived question
   const mainQ = questions[currentMainIndex];
@@ -177,6 +180,7 @@ export default function InterviewStep() {
     setRecording(false);
     questionStartRef.current = Date.now();
     thinkingTimeMsRef.current = 0;
+    asrCharsRef.current = 0;
   }, [currentMainIndex]);
 
   // Also reset when a follow-up question arrives (pendingFollowUpQuestion becomes non-null)
@@ -188,6 +192,7 @@ export default function InterviewStep() {
       setRecording(false);
       questionStartRef.current = Date.now();
       thinkingTimeMsRef.current = 0;
+      asrCharsRef.current = 0;
     }
   }, [pendingFollowUpQuestion]);
 
@@ -239,7 +244,10 @@ export default function InterviewStep() {
           interimText += event.results[i][0].transcript;
         }
       }
-      if (finalText) setTranscript((prev) => prev + finalText);
+      if (finalText) {
+        setTranscript((prev) => prev + finalText);
+        asrCharsRef.current += finalText.replace(/\s/g, "").length;
+      }
       setInterimTranscript(interimText);
     };
 
@@ -274,6 +282,7 @@ export default function InterviewStep() {
     setRecording(false);
     questionStartRef.current = Date.now();
     thinkingTimeMsRef.current = 0;
+    asrCharsRef.current = 0;
   };
 
   const handleSubmit = async () => {
@@ -299,7 +308,8 @@ export default function InterviewStep() {
       isFollowUp,
       depth: followUpDepth,
       durationSec: seconds,
-      answerLen: text.length, // length only — never the answer content
+      answerLen: text.replace(/\s/g, "").length, // length only — never the content
+      asrChars: asrCharsRef.current, // chars from voice → 转写编辑率 = 1 - asrChars/answerLen
       isDemo,
     });
 
@@ -315,6 +325,7 @@ export default function InterviewStep() {
     setRecording(false);
     questionStartRef.current = Date.now();
     thinkingTimeMsRef.current = 0;
+    asrCharsRef.current = 0;
 
     // Demo mode or max follow-ups reached → advance directly
     if (isDemo || newExchanges.length > MAX_FOLLOWUPS) {
@@ -324,6 +335,7 @@ export default function InterviewStep() {
 
     // Ask LLM whether to follow up
     setIsJudging(true);
+    const judgeStartedAt = Date.now();
     try {
       const res = await fetch("/api/generate-followup", {
         method: "POST",
@@ -338,6 +350,7 @@ export default function InterviewStep() {
           resume,
         }),
       });
+      const judgeMs = Date.now() - judgeStartedAt;
 
       if (res.ok) {
         const data = (await res.json()) as {
@@ -348,16 +361,29 @@ export default function InterviewStep() {
           track(EVENTS.FOLLOWUP_TRIGGERED, {
             mainIndex: currentMainIndex,
             depth: newExchanges.length,
+            latencyMs: judgeMs,
           });
           setPendingFollowUp(data.followUpQuestion);
         } else {
           advanceToNext(newExchanges);
         }
       } else {
-        // API error → just advance
+        // API error → degrade (advance without follow-up)
+        track(EVENTS.FOLLOWUP_DEGRADED, {
+          mainIndex: currentMainIndex,
+          depth: newExchanges.length,
+          reason: `http_${res.status}`,
+          latencyMs: judgeMs,
+        });
         advanceToNext(newExchanges);
       }
     } catch {
+      track(EVENTS.FOLLOWUP_DEGRADED, {
+        mainIndex: currentMainIndex,
+        depth: newExchanges.length,
+        reason: "network",
+        latencyMs: Date.now() - judgeStartedAt,
+      });
       advanceToNext(newExchanges);
     } finally {
       setIsJudging(false);

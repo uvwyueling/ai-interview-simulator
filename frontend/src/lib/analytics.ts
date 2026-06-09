@@ -16,8 +16,10 @@ export const EVENTS = {
   INTERVIEW_STARTED: "interview_started",
   ANSWER_SUBMITTED: "answer_submitted",
   FOLLOWUP_TRIGGERED: "followup_triggered",
+  FOLLOWUP_DEGRADED: "followup_degraded", // followup API failed → advanced without it
   INTERVIEW_COMPLETED: "interview_completed",
   FEEDBACK_VIEWED: "feedback_viewed",
+  FEEDBACK_GENERATED: "feedback_generated", // success + latency (counterpart to _failed)
   FEEDBACK_FAILED: "feedback_failed",
   FEEDBACK_RATED: "feedback_rated", // 👍/👎 on feedback quality or follow-up usefulness
   REPORT_EXPORTED: "report_exported",

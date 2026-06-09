@@ -170,6 +170,13 @@ export default function InputStep() {
         <p className="mt-3 text-[14px] text-slate-500 max-w-xl mx-auto">
           上传简历和岗位 JD，AI 将生成 3 道核心面试题，并根据你的回答实时追问（最多 3 次），模拟真实深度面试体验。
         </p>
+        <div className="mt-4 inline-flex items-center gap-1.5 text-[12px] text-slate-400 bg-slate-100/70 rounded-full px-3 py-1.5">
+          <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 text-emerald-500" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+          </svg>
+          <span>简历内容仅用于本次生成面试题与反馈，<span className="text-slate-500 font-medium">不留存、不用于训练</span></span>
+        </div>
       </div>
 
       {error && (
@@ -405,7 +412,7 @@ export default function InputStep() {
         </div>
         <div className="flex items-center gap-1.5">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>{" "}
-          数据仅本地处理，不上传
+          简历仅用于本次面试生成，不留存、不用于训练
         </div>
         <div className="flex items-center gap-1.5">
           <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>{" "}

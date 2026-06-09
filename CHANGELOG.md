@@ -6,6 +6,24 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.6.0] — 2026-06-09
+
+### Added
+- **Guardrail instrumentation (metrics layer 3)**:
+  - `followup_degraded` event — fired when the follow-up API errors/times out and the app advances without a follow-up; carries `reason` (`http_*` / `network`) and `latencyMs`. Lets us measure 追问降级率
+  - `feedback_generated` event — success counterpart to `feedback_failed`, with `latencyMs` and `exchanges`. Closes the feedback funnel and captures generation latency
+  - Stage latency: `latencyMs` added to `followup_triggered`, `followup_degraded`, `feedback_generated`, `feedback_failed` (questions already had it)
+  - `asrChars` on `answer_submitted` — cumulative characters contributed by speech recognition; with `answerLen` it yields the 转写编辑率 (ASR-quality proxy): `1 - asrChars/answerLen`
+- **Privacy notice** on the input screen — a lock-badge line under the hero: "简历内容仅用于本次生成面试题与反馈，不留存、不用于训练"
+
+### Fixed
+- **Corrected a misleading privacy claim** — the input footer previously said "数据仅本地处理，不上传", which was inaccurate (the résumé is sent server-side to the model for generation). Replaced with an honest statement: "简历仅用于本次面试生成，不留存、不用于训练"
+
+### Changed
+- `answer_submitted` `answerLen` now counts non-whitespace characters (consistent with `asrChars`)
+
+---
+
 ## [0.5.0] — 2026-06-08
 
 ### Added
