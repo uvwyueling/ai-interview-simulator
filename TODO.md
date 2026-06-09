@@ -31,7 +31,7 @@
 - [x] 匿名身份 + 自建埋点（lib/identity + analytics + db，POST/GET /api/track → Supabase）
 - [x] 漏斗事件埋点（9 个核心事件）+ env 标记（prod/dev 区分）
 - [x] 反馈结果持久化（H1：刷新不再重复生成、不再重复花钱；H3：feedback_viewed 每场只计一次）
-- [ ] Phase 2 质量埋点：反馈页 👍/👎 评分 → 量化"追问有用率""反馈认可度"（指标体系第二层命脉）
+- [x] 质量埋点：反馈页 👍/👎 评分 → 量化"反馈认可度""追问有用率"（feedback_rated 事件，评分持久化防重复计数）
 - [ ] 护栏埋点补全：followup_degraded（追问降级率）、转写编辑率（editedChars）、各环节延迟
 
 ## 待办池（按优先级）

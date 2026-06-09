@@ -169,6 +169,49 @@ function ErrorCard({ message, onRetry }: { message: string; onRetry: () => void 
   );
 }
 
+function RatingButtons({
+  value,
+  onRate,
+}: {
+  value?: number;
+  onRate: (v: 1 | -1) => void;
+}) {
+  const base =
+    "w-8 h-8 rounded-lg grid place-items-center transition ring-1";
+  return (
+    <div className="flex items-center gap-2">
+      <button
+        onClick={() => onRate(1)}
+        aria-label="有帮助"
+        className={`${base} ${
+          value === 1
+            ? "bg-emerald-500 text-white ring-emerald-500"
+            : "bg-white text-slate-400 ring-slate-200 hover:ring-emerald-300 hover:text-emerald-500"
+        }`}
+      >
+        <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M7 10v12" />
+          <path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z" />
+        </svg>
+      </button>
+      <button
+        onClick={() => onRate(-1)}
+        aria-label="没帮助"
+        className={`${base} ${
+          value === -1
+            ? "bg-rose-500 text-white ring-rose-500"
+            : "bg-white text-slate-400 ring-slate-200 hover:ring-rose-300 hover:text-rose-500"
+        }`}
+      >
+        <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M17 14V2" />
+          <path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
 type Props = {
   onRestart: () => void;
 };
@@ -183,6 +226,8 @@ export default function FeedbackStep({ onRestart }: Props) {
     setFeedbackAt,
     feedbackViewedTracked,
     markFeedbackViewed,
+    ratings,
+    setRating,
   } = useInterview();
   const isDemo = completedThreads.length === 0;
   const count = isDemo ? 1 : completedThreads.length;
@@ -336,6 +381,19 @@ export default function FeedbackStep({ onRestart }: Props) {
   const selectedThread =
     !isDemo && !isSummary ? completedThreads[selectedIdx] : null;
   const exchangeCount = selectedThread ? selectedThread.exchanges.length : 0;
+
+  // Record a 👍/👎 and fire the analytics event — but only when the value actually
+  // changes, so refresh (restored ratings) and re-clicking the same choice don't
+  // double-count.
+  const rate = (
+    key: string,
+    value: 1 | -1,
+    payload: Record<string, unknown>
+  ) => {
+    if (ratings[key] === value) return;
+    setRating(key, value);
+    track(EVENTS.FEEDBACK_RATED, { ...payload, usefulness: value, isDemo });
+  };
 
   // Retry handler — in summary mode, retry all failed; otherwise retry current
   const handleRetry = () => {
@@ -687,6 +745,67 @@ export default function FeedbackStep({ onRestart }: Props) {
           </>
         )}
       </div>
+
+      {/* Quality ratings — only when there is feedback to rate */}
+      {!hasError && !isLoading && currentFeedback && (
+        <div className="mt-6 space-y-3">
+          {/* 反馈认可度 */}
+          <div className="flex items-center justify-between gap-4 rounded-xl bg-slate-50 ring-1 ring-slate-200 px-5 py-4">
+            <div className="text-[13px] text-slate-600">
+              {isSummary ? "这份综合反馈对你有帮助吗？" : "这份反馈对你有帮助吗？"}
+            </div>
+            <RatingButtons
+              value={ratings[isSummary ? "fb:summary" : `fb:${selectedIdx}`]}
+              onRate={(v) =>
+                rate(isSummary ? "fb:summary" : `fb:${selectedIdx}`, v, {
+                  target: "feedback",
+                  index: isSummary ? "summary" : selectedIdx,
+                })
+              }
+            />
+          </div>
+
+          {/* 追问有用率 — only for an individual question that had follow-ups */}
+          {!isSummary && selectedThread && selectedThread.exchanges.length > 1 && (
+            <div className="rounded-xl ring-1 ring-slate-200 px-5 py-4">
+              <div className="flex items-center gap-2 text-[13px] font-medium text-slate-700 mb-3">
+                <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 text-amber-500" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="9 14 4 9 9 4" />
+                  <path d="M20 20v-7a4 4 0 0 0-4-4H4" />
+                </svg>
+                AI 的追问是否切中要害？
+              </div>
+              <div className="space-y-2">
+                {selectedThread.exchanges.slice(1).map((ex, j) => {
+                  const depth = j + 1;
+                  const key = `fu:${selectedIdx}:${depth}`;
+                  return (
+                    <div
+                      key={key}
+                      className="flex items-center justify-between gap-4 py-1.5"
+                    >
+                      <div className="text-[12px] text-slate-500 leading-relaxed flex-1">
+                        <span className="text-amber-600 font-medium">追问 {depth}：</span>
+                        {ex.question.text}
+                      </div>
+                      <RatingButtons
+                        value={ratings[key]}
+                        onRate={(v) =>
+                          rate(key, v, {
+                            target: "followup",
+                            index: selectedIdx,
+                            followupDepth: depth,
+                          })
+                        }
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Action row */}
       <div className="mt-8 flex flex-col sm:flex-row items-center justify-between gap-4 bg-gradient-to-r from-indigo-50 via-indigo-50/40 to-transparent rounded-2xl px-6 py-5 ring-1 ring-indigo-100">

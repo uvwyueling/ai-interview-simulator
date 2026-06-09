@@ -19,6 +19,7 @@ export const EVENTS = {
   INTERVIEW_COMPLETED: "interview_completed",
   FEEDBACK_VIEWED: "feedback_viewed",
   FEEDBACK_FAILED: "feedback_failed",
+  FEEDBACK_RATED: "feedback_rated", // 👍/👎 on feedback quality or follow-up usefulness
   REPORT_EXPORTED: "report_exported",
 } as const;
 

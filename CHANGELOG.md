@@ -6,6 +6,24 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.5.0] — 2026-06-08
+
+### Added
+- **Quality feedback instrumentation (Phase 2)** — 👍/👎 controls on the feedback page to quantify the two second-layer metrics that matter most for an AI product:
+  - **反馈认可度 (feedback approval)** — a thumbs rating under each question's feedback and under the cross-question summary ("这份反馈对你有帮助吗？")
+  - **追问有用率 (follow-up usefulness)** — for any question that had follow-ups, each follow-up question is listed with its own thumbs rating ("AI 的追问是否切中要害？")
+- New `feedback_rated` analytics event with `{ target: "feedback" | "followup", usefulness: 1 | -1, index, followupDepth?, isDemo }`
+- Reusable `RatingButtons` component (SVG thumbs, matches the app's icon style)
+- Ratings persisted in `InterviewContext` (`ratings` map, keyed e.g. `fb:0` / `fb:summary` / `fu:0:1`) with a `setRating` action
+
+### Changed
+- Ratings only fire `feedback_rated` when the value actually changes — refresh (restored ratings) and re-clicking the same choice never double-count, consistent with the v0.4.2 feedback_viewed guard
+
+### Notes
+- Analytics queries: 反馈认可度 = ratio of `usefulness=1` where `target='feedback'`; 追问有用率 = same where `target='followup'` (filter `props->>'env'='prod'` and `props->>'isDemo'='false'` for real signal)
+
+---
+
 ## [0.4.2] — 2026-06-08
 
 ### Fixed

@@ -35,6 +35,9 @@ type PersistedState = {
   // Persisted so `feedback_viewed` is counted once per interview, not on every
   // refresh of the feedback page.
   feedbackViewedTracked: boolean;
+  // 👍/👎 ratings keyed by target (e.g. "fb:0", "fb:summary", "fu:0:1"). Persisted
+  // so a refresh restores the user's choice and avoids double-counting.
+  ratings: Record<string, number>;
 };
 
 function readSession(): PersistedState | null {
@@ -79,6 +82,7 @@ type InterviewState = {
   completedThreads: QuestionThread[];
   feedbacks: (Feedback | null)[];  // per-thread feedback results (persisted)
   feedbackViewedTracked: boolean;  // whether feedback_viewed has fired this interview
+  ratings: Record<string, number>; // 👍/👎 ratings keyed by target (persisted)
 };
 
 type InterviewActions = {
@@ -91,6 +95,8 @@ type InterviewActions = {
   setFeedbackAt: (index: number, feedback: Feedback) => void;
   /** Mark feedback_viewed as already tracked for this interview. */
   markFeedbackViewed: () => void;
+  /** Record a 👍/👎 rating under a key (1 = up, -1 = down). */
+  setRating: (key: string, value: number) => void;
   /**
    * Finalise the current main question with the given exchanges, then
    * advance to the next main question or go to the feedback step.
@@ -118,6 +124,7 @@ export function InterviewProvider({ children }: { children: ReactNode }) {
   const [completedThreads, setCompletedThreads] = useState<QuestionThread[]>([]);
   const [feedbacks, setFeedbacks] = useState<(Feedback | null)[]>([]);
   const [feedbackViewedTracked, setFeedbackViewedTracked] = useState(false);
+  const [ratings, setRatings] = useState<Record<string, number>>({});
 
   // Tracks whether we have loaded from sessionStorage.
   // Using a ref (not state) so toggling it doesn't trigger an extra render.
@@ -138,12 +145,13 @@ export function InterviewProvider({ children }: { children: ReactNode }) {
       completedThreads,
       feedbacks,
       feedbackViewedTracked,
+      ratings,
     });
   }, [
     step, resume, jd, questions, isDemo,
     currentMainIndex, currentExchanges,
     pendingFollowUpQuestion, completedThreads,
-    feedbacks, feedbackViewedTracked,
+    feedbacks, feedbackViewedTracked, ratings,
   ]);
 
   // ── HYDRATE effect (declared second — runs after save on initial mount) ──────
@@ -161,6 +169,7 @@ export function InterviewProvider({ children }: { children: ReactNode }) {
       setCompletedThreads(saved.completedThreads ?? []);
       setFeedbacks(saved.feedbacks ?? []);
       setFeedbackViewedTracked(saved.feedbackViewedTracked ?? false);
+      setRatings(saved.ratings ?? {});
     }
     isHydrated.current = true;
   }, []); // runs exactly once on mount
@@ -177,6 +186,7 @@ export function InterviewProvider({ children }: { children: ReactNode }) {
     setCompletedThreads([]);
     setFeedbacks([]);
     setFeedbackViewedTracked(false);
+    setRatings({});
     setIsJudgingState(false);
     setPendingFollowUpState(null);
     setStep("interview");
@@ -200,6 +210,9 @@ export function InterviewProvider({ children }: { children: ReactNode }) {
   };
 
   const markFeedbackViewed = () => setFeedbackViewedTracked(true);
+
+  const setRating = (key: string, value: number) =>
+    setRatings((prev) => ({ ...prev, [key]: value }));
 
   const advanceToNext = (finalExchanges: Exchange[]) => {
     const thread: QuestionThread = {
@@ -237,6 +250,7 @@ export function InterviewProvider({ children }: { children: ReactNode }) {
     setCompletedThreads([]);
     setFeedbacks([]);
     setFeedbackViewedTracked(false);
+    setRatings({});
     setIsJudgingState(false);
     setPendingFollowUpState(null);
   };
@@ -256,12 +270,14 @@ export function InterviewProvider({ children }: { children: ReactNode }) {
         completedThreads,
         feedbacks,
         feedbackViewedTracked,
+        ratings,
         startInterview,
         appendExchange,
         setIsJudging,
         setPendingFollowUp,
         setFeedbackAt,
         markFeedbackViewed,
+        setRating,
         advanceToNext,
         jumpToStep,
         reset,
