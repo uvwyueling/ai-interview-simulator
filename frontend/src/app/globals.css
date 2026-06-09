@@ -3,6 +3,11 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Safety net: never allow horizontal scroll on small screens */
+html, body {
+  overflow-x: hidden;
+}
+
 .bg-canvas {
   background: #fafaf9;
   background-image:

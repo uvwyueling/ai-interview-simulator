@@ -6,6 +6,22 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.7.0] — 2026-06-09
+
+### Added
+- **Mobile responsiveness** — all three steps (input / interview / feedback), the header, and the demo step-jumper now render cleanly on phones. Verified at 375px with **zero horizontal overflow** across every screen
+
+### Fixed
+- Hero `<h1>` overflowed the viewport on mobile (34px CJK text exceeded 375px); now `text-[26px] sm:text-[34px]` with a `sm:` line break
+- Header was cramped on mobile: logo title/subtitle wrapped vertically and the "教程" label broke mid-character. Logo text is now `whitespace-nowrap`, the tutorial link is hidden below `sm`, the mobile progress bar shrinks (`w-16 sm:w-40`), and header padding tightens (`px-4 sm:px-6`)
+- Demo step-jumper button labels (输入/面试/反馈) wrapped vertically on narrow widths; added `whitespace-nowrap`
+
+### Changed
+- Added a global `overflow-x: hidden` safety net on `html, body`
+- Hero subtitle and privacy badge scale down one step on mobile (`text-[13px]/[11px] sm:…`)
+
+---
+
 ## [0.6.0] — 2026-06-09
 
 ### Added

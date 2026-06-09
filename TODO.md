@@ -25,7 +25,7 @@
 - [x] sessionStorage 状态持久化（刷新不丢进度）
 - [x] PDF 报告导出（打印就绪 HTML，零依赖）
 - [x] 混合模型策略（followup→haiku，questions/feedback→sonnet，集中配置）
-- [ ] 7. 移动端适配（当前桌面优先，三步页面待响应式改造）
+- [x] 7. 移动端适配（三步页面 + Header + Demo 跳转条响应式，375px 实测零横向溢出）
 
 ## Phase 3: 数据与度量 🔄
 - [x] 匿名身份 + 自建埋点（lib/identity + analytics + db，POST/GET /api/track → Supabase）
@@ -36,7 +36,7 @@
 
 ## 待办池（按优先级）
 ### 中
-- [ ] 移动端适配（见 Phase 2 第 7 项）
+- [x] 移动端适配（见 Phase 2 第 7 项）
 - [x] 隐私声明文案（修正失实的"不上传"表述 + 顶部锁形隐私说明：仅本次生成、不留存、不用于训练）
 - [ ] "AI 判断中"时刷新的半完成态恢复（避免主问题重复作答）
 

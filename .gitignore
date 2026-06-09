@@ -9,3 +9,5 @@
 
 # 密钥
 .env*.local
+# Claude Code 本地工具配置
+.claude/

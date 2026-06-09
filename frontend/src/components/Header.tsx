@@ -20,8 +20,8 @@ function Logo() {
         </svg>
       </div>
       <div className="leading-tight">
-        <div className="text-[15px] font-semibold tracking-tight">Echo Interview</div>
-        <div className="text-[11px] text-slate-500 -mt-0.5">AI Mock Interview · Demo</div>
+        <div className="text-[15px] font-semibold tracking-tight whitespace-nowrap">Echo Interview</div>
+        <div className="text-[11px] text-slate-500 -mt-0.5 whitespace-nowrap">AI Mock Interview · Demo</div>
       </div>
     </div>
   );
@@ -58,7 +58,7 @@ function StepBar({ step }: { step: number }) {
         })}
       </div>
       <div
-        className="md:hidden w-40 h-1.5 rounded-full stepline"
+        className="md:hidden w-16 sm:w-40 h-1.5 rounded-full stepline shrink-0"
         style={{ "--p": `${pct}%` } as CSSProperties}
       ></div>
     </div>
@@ -68,11 +68,11 @@ function StepBar({ step }: { step: number }) {
 export default function Header({ step }: { step: number }) {
   return (
     <header className="border-b border-slate-200/70 bg-white/70 backdrop-blur sticky top-0 z-20">
-      <div className="max-w-[1240px] mx-auto px-6 lg:px-10 h-16 flex items-center justify-between">
+      <div className="max-w-[1240px] mx-auto px-4 sm:px-6 lg:px-10 h-16 flex items-center justify-between gap-3">
         <Logo />
         <StepBar step={step} />
-        <div className="flex items-center gap-3">
-          <button className="text-[13px] text-slate-500 hover:text-slate-800 transition">
+        <div className="flex items-center gap-3 shrink-0">
+          <button className="hidden sm:block text-[13px] text-slate-500 hover:text-slate-800 transition">
             教程
           </button>
           <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-200 to-rose-200 grid place-items-center text-[12px] font-semibold text-slate-700">

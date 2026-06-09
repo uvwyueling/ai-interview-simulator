@@ -95,7 +95,7 @@ function AppContent() {
           <button
             key={s}
             onClick={() => handleDemoJump(s)}
-            className={`px-3 py-1 rounded-full transition ${step === s ? "bg-indigo-600 text-white" : "text-slate-500 hover:bg-slate-100"}`}
+            className={`px-3 py-1 rounded-full transition whitespace-nowrap ${step === s ? "bg-indigo-600 text-white" : "text-slate-500 hover:bg-slate-100"}`}
           >
             {STEP_LABELS[i]}
           </button>
