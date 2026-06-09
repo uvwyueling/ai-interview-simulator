@@ -99,8 +99,38 @@ export default function InputStep() {
     }
 
     if (ext === "pdf") {
-      setError("暂不支持 PDF 直接解析，请打开 PDF 复制文字后粘贴到文本框");
-      setFileName("");
+      setFileLoading(true);
+      try {
+        const pdfjs = await import("pdfjs-dist");
+        // Self-hosted worker (copied to /public) — no external CDN, works in CN.
+        pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+        const buf = await file.arrayBuffer();
+        const pdf = await pdfjs.getDocument({ data: buf }).promise;
+        let text = "";
+        for (let p = 1; p <= pdf.numPages; p++) {
+          const page = await pdf.getPage(p);
+          const content = await page.getTextContent();
+          text +=
+            content.items.map((it) => ("str" in it ? it.str : "")).join(" ") + "\n";
+        }
+        // Collapse the extra spaces pdf.js inserts between glyph runs.
+        const trimmed = text
+          .replace(/[ \t]+/g, " ")
+          .replace(/ ?\n ?/g, "\n")
+          .replace(/\n{3,}/g, "\n\n")
+          .trim();
+        if (!trimmed) {
+          setError("这个 PDF 似乎是扫描件/图片，未能提取到文字，请复制文本后粘贴");
+          setFileName("");
+        } else {
+          setResume(trimmed);
+        }
+      } catch {
+        setError("无法解析 PDF，请复制内容后手动粘贴到文本框");
+        setFileName("");
+      } finally {
+        setFileLoading(false);
+      }
       return;
     }
 
@@ -252,7 +282,7 @@ export default function InputStep() {
               ) : fileName ? (
                 <span className="text-slate-700 font-medium">{fileName}</span>
               ) : (
-                "拖拽 TXT / DOCX 到此 · 或"
+                "拖拽 TXT / DOCX / PDF 到此 · 或"
               )}
             </div>
             <button
@@ -264,7 +294,7 @@ export default function InputStep() {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".txt,.docx"
+              accept=".txt,.docx,.pdf"
               className="hidden"
               onChange={(e) => {
                 const f = e.target.files?.[0];

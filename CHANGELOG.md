@@ -6,6 +6,27 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.8.0] — 2026-06-09
+
+### Added
+- **PDF résumé parsing** — `.pdf` uploads are now parsed in-browser via `pdfjs-dist`; extracted text fills the résumé box. Worker is self-hosted at `/public/pdf.worker.min.mjs` (no external CDN — works in mainland China). Scanned/image PDFs are detected and the user is asked to paste text. Dropzone hint and file picker updated to include PDF. Verified end-to-end (drag → parse → text)
+
+### Fixed
+- **Mid-judging refresh recovery (M3)** — refreshing while "AI 判断是否追问" was in flight left a dangling state (answer saved, no follow-up pending) that could make the user re-answer the main question. The judging logic is extracted into `runFollowUpJudgment`, and `InterviewStep` now detects this unique state on mount and resumes the judgment automatically
+- **`crypto.randomUUID` fallback** — `lib/identity.ts` now degrades to a Math.random-based UUID when `crypto.randomUUID` is unavailable (non-HTTPS contexts), preventing empty `anonId` → dropped analytics events
+
+### Changed
+- **Prompt caching** — `generate-feedback` system prompt refactored to be fully static (per-call timing data moved into the user message) and marked with `cache_control: ephemeral`, so the 3 staggered feedback calls in a session reuse the cached prefix; `generate-questions` and `generate-followup` system prompts also marked cacheable. Note: real savings scale with prompt size — the feedback prompt (largest, repeated) benefits most
+- Collapse the redundant spaces pdf.js inserts between glyph runs when assembling résumé text
+
+### Removed
+- Temporary `scripts/gen-demo-report.ts` (one-off PDF-report preview helper)
+
+### Dependencies
+- Added `pdfjs-dist`
+
+---
+
 ## [0.7.0] — 2026-06-09
 
 ### Added

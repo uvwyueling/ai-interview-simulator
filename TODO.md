@@ -38,10 +38,10 @@
 ### 中
 - [x] 移动端适配（见 Phase 2 第 7 项）
 - [x] 隐私声明文案（修正失实的"不上传"表述 + 顶部锁形隐私说明：仅本次生成、不留存、不用于训练）
-- [ ] "AI 判断中"时刷新的半完成态恢复（避免主问题重复作答）
+- [x] "AI 判断中"时刷新的半完成态恢复（提取 runFollowUpJudgment + 挂载时检测半完成态并续跑判断）
 
 ### 低
-- [ ] crypto.randomUUID 非 HTTPS 兜底（防 anonId 为空导致埋点丢失）
-- [ ] PDF 简历在线解析（pdf.js）
-- [ ] 提示词缓存降本（复用固定 System Prompt）
-- [ ] 清理临时脚本 scripts/gen-demo-report.ts（确认是否保留）
+- [x] crypto.randomUUID 非 HTTPS 兜底（identity 加 uuid() 降级，防 anonId 为空）
+- [x] PDF 简历在线解析（pdfjs-dist，自托管 worker 到 public/，实测拖拽解析成功）
+- [x] 提示词缓存降本（feedback system 重构为静态 + cache_control；questions/followup 同加）
+- [x] 清理临时脚本 scripts/gen-demo-report.ts（已删除）

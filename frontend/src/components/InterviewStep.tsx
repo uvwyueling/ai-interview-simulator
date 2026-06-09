@@ -285,6 +285,88 @@ export default function InterviewStep() {
     asrCharsRef.current = 0;
   };
 
+  // Ask the LLM whether to follow up on the given exchanges. Extracted so it can
+  // be re-run on mount when a refresh interrupted the judging step (M3 recovery).
+  const runFollowUpJudgment = async (exchanges: Exchange[]) => {
+    setIsJudging(true);
+    const judgeStartedAt = Date.now();
+    try {
+      const res = await fetch("/api/generate-followup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mainQuestion: mainQ.text,
+          conversationThread: exchanges.map((e) => ({
+            question: e.question.text,
+            answer: e.answer.transcript,
+          })),
+          jd,
+          resume,
+        }),
+      });
+      const judgeMs = Date.now() - judgeStartedAt;
+
+      if (res.ok) {
+        const data = (await res.json()) as {
+          shouldFollowUp: boolean;
+          followUpQuestion?: string;
+        };
+        if (data.shouldFollowUp && data.followUpQuestion) {
+          track(EVENTS.FOLLOWUP_TRIGGERED, {
+            mainIndex: currentMainIndex,
+            depth: exchanges.length,
+            latencyMs: judgeMs,
+          });
+          setPendingFollowUp(data.followUpQuestion);
+        } else {
+          advanceToNext(exchanges);
+        }
+      } else {
+        track(EVENTS.FOLLOWUP_DEGRADED, {
+          mainIndex: currentMainIndex,
+          depth: exchanges.length,
+          reason: `http_${res.status}`,
+          latencyMs: judgeMs,
+        });
+        advanceToNext(exchanges);
+      }
+    } catch {
+      track(EVENTS.FOLLOWUP_DEGRADED, {
+        mainIndex: currentMainIndex,
+        depth: exchanges.length,
+        reason: "network",
+        latencyMs: Date.now() - judgeStartedAt,
+      });
+      advanceToNext(exchanges);
+    } finally {
+      setIsJudging(false);
+    }
+  };
+
+  // M3 recovery: if a refresh happened while the app was judging a follow-up,
+  // the answer is already in currentExchanges but pendingFollowUpQuestion is null
+  // and isJudging was reset — a state that is otherwise impossible (answering the
+  // main question has empty exchanges; answering a follow-up has a pending one).
+  // Resume the judgment instead of leaving the user to re-answer the main question.
+  const recoveredRef = useRef(false);
+  useEffect(() => {
+    if (recoveredRef.current) return;
+    recoveredRef.current = true;
+    if (
+      !isDemo &&
+      !isJudging &&
+      pendingFollowUpQuestion === null &&
+      currentExchanges.length > 0
+    ) {
+      if (currentExchanges.length > MAX_FOLLOWUPS) {
+        advanceToNext(currentExchanges);
+      } else {
+        runFollowUpJudgment(currentExchanges);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleSubmit = async () => {
     const text = (transcript + interimTranscript).trim();
     if (!text || isJudging) return;
@@ -333,61 +415,7 @@ export default function InterviewStep() {
       return;
     }
 
-    // Ask LLM whether to follow up
-    setIsJudging(true);
-    const judgeStartedAt = Date.now();
-    try {
-      const res = await fetch("/api/generate-followup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mainQuestion: mainQ.text,
-          conversationThread: newExchanges.map((e) => ({
-            question: e.question.text,
-            answer: e.answer.transcript,
-          })),
-          jd,
-          resume,
-        }),
-      });
-      const judgeMs = Date.now() - judgeStartedAt;
-
-      if (res.ok) {
-        const data = (await res.json()) as {
-          shouldFollowUp: boolean;
-          followUpQuestion?: string;
-        };
-        if (data.shouldFollowUp && data.followUpQuestion) {
-          track(EVENTS.FOLLOWUP_TRIGGERED, {
-            mainIndex: currentMainIndex,
-            depth: newExchanges.length,
-            latencyMs: judgeMs,
-          });
-          setPendingFollowUp(data.followUpQuestion);
-        } else {
-          advanceToNext(newExchanges);
-        }
-      } else {
-        // API error → degrade (advance without follow-up)
-        track(EVENTS.FOLLOWUP_DEGRADED, {
-          mainIndex: currentMainIndex,
-          depth: newExchanges.length,
-          reason: `http_${res.status}`,
-          latencyMs: judgeMs,
-        });
-        advanceToNext(newExchanges);
-      }
-    } catch {
-      track(EVENTS.FOLLOWUP_DEGRADED, {
-        mainIndex: currentMainIndex,
-        depth: newExchanges.length,
-        reason: "network",
-        latencyMs: Date.now() - judgeStartedAt,
-      });
-      advanceToNext(newExchanges);
-    } finally {
-      setIsJudging(false);
-    }
+    runFollowUpJudgment(newExchanges);
   };
 
   const fmt = (s: number) =>

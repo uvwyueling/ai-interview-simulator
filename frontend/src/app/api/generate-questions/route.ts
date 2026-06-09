@@ -56,7 +56,9 @@ async function callWithRetry(userMessage: string, maxAttempts = 3) {
       const message = await client.messages.create({
         model: MODELS.standard,
         max_tokens: 1024,
-        system: SYSTEM_PROMPT,
+        system: [
+          { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
+        ],
         messages: [{ role: "user", content: userMessage }],
       });
 

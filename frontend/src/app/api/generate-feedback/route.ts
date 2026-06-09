@@ -59,15 +59,19 @@ function thinkingTimeGuidance(ms: number): string {
   return `思考时间 ${s.toFixed(1)} 秒，节奏良好。请在 thinkingTimeFeedback 中给予积极肯定。`;
 }
 
-function buildSystemPrompt(thinkingTimeMs: number, speakingTimeMs: number): string {
+/** Per-call timing data — lives in the USER message so the SYSTEM prompt stays
+ *  byte-stable and qualifies for prompt caching across the session's 3 calls. */
+function buildTimingNote(thinkingTimeMs: number, speakingTimeMs: number): string {
   const speakingSec = (speakingTimeMs / 1000).toFixed(0);
-  return `你是一位拥有 10 年经验的资深技术面试官，正在对候选人的整轮面试作答（含追问环节）进行综合评估。
+  return `【计时数据】\n- ${thinkingTimeGuidance(thinkingTimeMs)}\n- 候选人本题总回答时长：${speakingSec} 秒（含所有追问回合）`;
+}
 
-【计时数据】
-- ${thinkingTimeGuidance(thinkingTimeMs)}
-- 候选人本题总回答时长：${speakingSec} 秒（含所有追问回合）
+// Static system prompt → eligible for prompt caching (cache_control below). All
+// per-call data (timing, question, thread, résumé, JD) is in the user message.
+const SYSTEM_PROMPT = `你是一位拥有 10 年经验的资深技术面试官，正在对候选人的整轮面试作答（含追问环节）进行综合评估。
 
 【评分说明】
+用户消息中会提供本题的计时数据、主问题、完整对话记录（含追问）、候选人简历与岗位 JD。
 对话记录可能包含主问题和多轮追问，请综合评估整个对话，而非单独评价某一轮回答。
 
 【评分维度定义】
@@ -107,14 +111,12 @@ function buildSystemPrompt(thinkingTimeMs: number, speakingTimeMs: number): stri
   "improvements": ["具体改进建议1", "具体改进建议2"],
   "thinkingTimeFeedback": "关于思考节奏的个性化反馈..."
 }`;
-}
 
 // ─── Core LLM call with retry ─────────────────────────────────────────────────
 
 const client = new Anthropic();
 
 async function callWithRetry(
-  systemPrompt: string,
   userMessage: string,
   maxAttempts: number = 3
 ): Promise<Feedback> {
@@ -125,7 +127,15 @@ async function callWithRetry(
       const response = await client.messages.create({
         model: MODELS.quality,
         max_tokens: 2000,
-        system: systemPrompt,
+        // Static system prompt marked for prompt caching — the 3 staggered
+        // feedback calls in a session reuse the cached prefix.
+        system: [
+          {
+            type: "text",
+            text: SYSTEM_PROMPT,
+            cache_control: { type: "ephemeral" },
+          },
+        ],
         messages: [{ role: "user", content: userMessage }],
       });
 
@@ -201,11 +211,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     )
     .join("\n\n");
 
-  const systemPrompt = buildSystemPrompt(thinkingTime, speakingTime);
-  const userMessage = `【主面试问题】\n${mainQuestion}\n\n【完整对话记录（含追问）】\n${threadText}\n\n【候选人简历】\n${resume}\n\n【岗位 JD】\n${jd}`;
+  const timingNote = buildTimingNote(thinkingTime, speakingTime);
+  const userMessage = `${timingNote}\n\n【主面试问题】\n${mainQuestion}\n\n【完整对话记录（含追问）】\n${threadText}\n\n【候选人简历】\n${resume}\n\n【岗位 JD】\n${jd}`;
 
   try {
-    const feedback = await callWithRetry(systemPrompt, userMessage);
+    const feedback = await callWithRetry(userMessage);
     return NextResponse.json(feedback);
   } catch (err) {
     console.error("[generate-feedback] final error:", err);
