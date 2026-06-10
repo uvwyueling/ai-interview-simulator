@@ -6,6 +6,18 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.8.3] — 2026-06-10
+
+### Fixed
+- **Wide-screen interview layout blowout** — added `min-w-0` to both grid columns. Grid `1fr` = `minmax(auto,1fr)`: the conversation-history panel's `truncate` (nowrap) text inflated the right column's min-content width, exploding it and squeezing the question card into a vertical strip on wide viewports. Verified at 2200px: columns hold the intended 1.1:1 ratio with long follow-up history present
+- **PDF parsing hardened for older browsers** — switched to pdf.js **legacy build** (+ matching legacy worker). The main build requires `Promise.withResolvers` (Chrome 119+ / Safari 17.4+) and threw on older browsers, the likely cause of the production "无法解析 PDF" report (production worker serving and the parse pipeline both verified healthy). Error message now mentions outdated browsers as a cause
+- **Dev-mode session restore was broken under React StrictMode** — the hydration guard was a ref; StrictMode's double effect pass made the second SAVE run see `isHydrated=true` while closing over blank default state, overwriting the stored session before the second HYDRATE re-read it. Changed the guard to React state (uncommitted in the second pass → save correctly skips). Production behavior unchanged
+
+### Removed
+- **Misleading JD hint "支持粘贴 BOSS / LinkedIn / 拉勾 链接"** (with its dashed box) — the product has no link-fetching capability; pasted URLs were treated as plain text
+
+---
+
 ## [0.8.2] — 2026-06-09
 
 ### Added

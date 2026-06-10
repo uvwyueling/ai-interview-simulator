@@ -101,8 +101,10 @@ export default function InputStep() {
     if (ext === "pdf") {
       setFileLoading(true);
       try {
-        const pdfjs = await import("pdfjs-dist");
-        // Self-hosted worker (copied to /public) — no external CDN, works in CN.
+        // Legacy build: the main build needs Promise.withResolvers (Safari 17.4+ /
+        // Chrome 119+) and silently breaks on older browsers — the legacy build
+        // ships polyfills. Worker in /public is the matching legacy worker.
+        const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
         pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
         const buf = await file.arrayBuffer();
         const pdf = await pdfjs.getDocument({ data: buf }).promise;
@@ -126,7 +128,7 @@ export default function InputStep() {
           setResume(trimmed);
         }
       } catch {
-        setError("无法解析 PDF，请复制内容后手动粘贴到文本框");
+        setError("无法解析 PDF（浏览器版本较旧也会导致失败），请更新浏览器或复制文字后粘贴");
         setFileName("");
       } finally {
         setFileLoading(false);
@@ -404,22 +406,6 @@ export default function InputStep() {
             >
               试用示例
             </button>
-          </div>
-
-          <div className="border border-dashed border-slate-200 rounded-xl px-4 py-3 mb-3 flex items-center gap-2 text-[12px] text-slate-500">
-            <svg
-              viewBox="0 0 24 24"
-              className="w-4 h-4 text-slate-400"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-            </svg>
-            <span>支持粘贴 BOSS / LinkedIn / 拉勾 链接</span>
           </div>
 
           <textarea

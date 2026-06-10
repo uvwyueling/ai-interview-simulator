@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, useRef, type ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
 import type { Question, Exchange, QuestionThread, Feedback } from "@/types/interview";
 import { track, EVENTS } from "@/lib/analytics";
 
@@ -127,12 +127,16 @@ export function InterviewProvider({ children }: { children: ReactNode }) {
   const [ratings, setRatings] = useState<Record<string, number>>({});
 
   // Tracks whether we have loaded from sessionStorage.
-  // Using a ref (not state) so toggling it doesn't trigger an extra render.
-  const isHydrated = useRef(false);
+  // MUST be state, not a ref: under React StrictMode (dev) effects run twice —
+  // with a ref, the second SAVE pass sees isHydrated=true while its closure
+  // still holds the default (blank) state, overwriting the stored session
+  // before the second HYDRATE pass re-reads it. Uncommitted state stays false
+  // in that second pass, so the save correctly skips.
+  const [isHydrated, setIsHydrated] = useState(false);
 
   // ── SAVE effect (declared first — runs before hydrate on initial mount) ──────
   useEffect(() => {
-    if (!isHydrated.current) return; // skip the pre-hydration render
+    if (!isHydrated) return; // skip until hydration has been applied
     writeSession({
       step,
       resume,
@@ -148,6 +152,7 @@ export function InterviewProvider({ children }: { children: ReactNode }) {
       ratings,
     });
   }, [
+    isHydrated,
     step, resume, jd, questions, isDemo,
     currentMainIndex, currentExchanges,
     pendingFollowUpQuestion, completedThreads,
@@ -171,8 +176,8 @@ export function InterviewProvider({ children }: { children: ReactNode }) {
       setFeedbackViewedTracked(saved.feedbackViewedTracked ?? false);
       setRatings(saved.ratings ?? {});
     }
-    isHydrated.current = true;
-  }, []); // runs exactly once on mount
+    setIsHydrated(true);
+  }, []); // runs exactly once on mount (twice under StrictMode — safe, see above)
 
   // ── Actions ───────────────────────────────────────────────────────────────────
 

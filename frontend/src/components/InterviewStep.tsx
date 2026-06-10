@@ -565,8 +565,11 @@ export default function InterviewStep() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-[1.1fr_1fr] gap-6">
-        {/* ── Left: Question + mic (or judging state) ── */}
-        <div className="bg-white rounded-2xl ring-1 ring-slate-200 ring-soft p-8 flex flex-col">
+        {/* ── Left: Question + mic (or judging state) ──
+             min-w-0 on both columns: grid 1fr = minmax(auto,1fr); without it,
+             nowrap content (truncate) in the history panel inflates the column's
+             min-content width and blows the layout apart on wide screens. */}
+        <div className="min-w-0 bg-white rounded-2xl ring-1 ring-slate-200 ring-soft p-8 flex flex-col">
           <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400 mb-1">
             面试官
           </div>
@@ -787,7 +790,7 @@ export default function InterviewStep() {
         </div>
 
         {/* ── Right: Conversation history + current transcript ── */}
-        <div className="bg-white rounded-2xl ring-1 ring-slate-200 ring-soft p-6 flex flex-col">
+        <div className="min-w-0 bg-white rounded-2xl ring-1 ring-slate-200 ring-soft p-6 flex flex-col">
           {/* Header */}
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">

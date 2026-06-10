@@ -14,6 +14,13 @@
 - [x] API 路由基础防滥用 —— lib/rateLimit 按 IP 内存限流（3 个 LLM 路由共享 40/min，track 200/min），429 + Retry-After。serverless 为尽力而为，公开上线再换 Upstash/KV
 - [x] 隐私政策 / 数据用途简述 —— 新建 /privacy 页（简历不留存 / 音频不录制 / 匿名统计 / 无账号 / 不用于训练），输入页隐私条已链接
 
+### 用户实测反馈（2026-06-10）✅ 已修复（v0.8.3）
+- [x] 宽屏追问界面布局崩坏 —— grid 两列加 min-w-0（truncate/nowrap 撑爆 1fr 列的 min-content）
+- [x] 误导性 JD 链接提示文案连虚线框删除（产品无抓链接能力）
+- [x] PDF 解析线上失败 —— 排查：线上 worker 服务正常、本地管线正常；最大嫌疑为旧浏览器缺 Promise.withResolvers（pdf.js v6 主构建要求 Chrome 119+/Safari 17.4+）。已切换 legacy 构建 + legacy worker 加固，待用户线上复测确认
+- [x] （顺带发现）dev 下 StrictMode 导致会话恢复失效 —— isHydrated 由 ref 改为 state
+- [ ] 成本异常排查（用户侧操作）：console.anthropic.com 查 Usage 明细；Supabase 查 followup_degraded 确认第三题降级原因；给 key 设 spend limit
+
 ### P2 · 内测期间观察 / 迭代（非阻断）
 - [ ] 历史进步追踪（Phase 1 已设计）—— 建议用内测先验证需求，再决定是否建
 - [ ] AI 评分校准 —— 用内测期 👍👎 评分 + 真实反馈，检验评分是否合理、稳定
