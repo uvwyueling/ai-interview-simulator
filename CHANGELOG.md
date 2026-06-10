@@ -6,6 +6,14 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.8.4] — 2026-06-10
+
+### Changed
+- **Chrome guidance now covers PDF parsing too** — user re-test confirmed PDF parsing works in Chrome but still fails in their Safari even with the pdf.js legacy build (Safari below the legacy build's support floor). Instead of adding another standalone hint, the existing trust badge was generalized: "推荐 Chrome 桌面端：语音作答与 PDF 解析体验最佳（其他浏览器可粘贴文本、键盘作答）"
+- **PDF failure error is now actionable** — "无法解析 PDF（Safari 等部分浏览器暂不支持），请改用 Chrome，或复制文字后粘贴" (Chrome users never see it; Safari users get a clear next step at the moment of failure)
+
+---
+
 ## [0.8.3] — 2026-06-10
 
 ### Fixed

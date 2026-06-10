@@ -17,7 +17,7 @@
 ### 用户实测反馈（2026-06-10）✅ 已修复（v0.8.3）
 - [x] 宽屏追问界面布局崩坏 —— grid 两列加 min-w-0（truncate/nowrap 撑爆 1fr 列的 min-content）
 - [x] 误导性 JD 链接提示文案连虚线框删除（产品无抓链接能力）
-- [x] PDF 解析线上失败 —— 排查：线上 worker 服务正常、本地管线正常；最大嫌疑为旧浏览器缺 Promise.withResolvers（pdf.js v6 主构建要求 Chrome 119+/Safari 17.4+）。已切换 legacy 构建 + legacy worker 加固，待用户线上复测确认
+- [x] PDF 解析线上失败 —— 排查：线上 worker 服务正常、本地管线正常；已切换 legacy 构建加固。用户复测结论：Chrome ✓ / Safari 仍失败（低于 legacy 支持下限）。v0.8.4 改为预期管理：Chrome 徽章文案覆盖 PDF + 失败报错指引改用 Chrome。不再深挖 Safari 兼容（内测阶段投入产出比低）
 - [x] （顺带发现）dev 下 StrictMode 导致会话恢复失效 —— isHydrated 由 ref 改为 state
 - [ ] 成本异常排查（用户侧操作）：console.anthropic.com 查 Usage 明细；Supabase 查 followup_degraded 确认第三题降级原因；给 key 设 spend limit
 

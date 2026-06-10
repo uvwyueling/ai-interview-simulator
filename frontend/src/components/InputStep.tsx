@@ -128,7 +128,7 @@ export default function InputStep() {
           setResume(trimmed);
         }
       } catch {
-        setError("无法解析 PDF（浏览器版本较旧也会导致失败），请更新浏览器或复制文字后粘贴");
+        setError("无法解析 PDF（Safari 等部分浏览器暂不支持），请改用 Chrome，或复制文字后粘贴");
         setFileName("");
       } finally {
         setFileLoading(false);
@@ -435,7 +435,7 @@ export default function InputStep() {
         </div>
         <div className="flex items-center gap-1.5">
           <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>{" "}
-          语音作答建议使用 Chrome 桌面端（其他浏览器可改用键盘输入）
+          推荐 Chrome 桌面端：语音作答与 PDF 解析体验最佳（其他浏览器可粘贴文本、键盘作答）
         </div>
       </div>
     </section>
