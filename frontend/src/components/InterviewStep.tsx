@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import type { Answer, Exchange, Question } from "@/types/interview";
 import { useInterview } from "@/context/InterviewContext";
 import { track, EVENTS } from "@/lib/analytics";
+import { fetchWithTimeout, isTimeoutError } from "@/lib/fetchWithTimeout";
 
 const MAX_FOLLOWUPS = 3;
 
@@ -291,19 +292,26 @@ export default function InterviewStep() {
     setIsJudging(true);
     const judgeStartedAt = Date.now();
     try {
-      const res = await fetch("/api/generate-followup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mainQuestion: mainQ.text,
-          conversationThread: exchanges.map((e) => ({
-            question: e.question.text,
-            answer: e.answer.transcript,
-          })),
-          jd,
-          resume,
-        }),
-      });
+      // 45s timeout: judgments normally take 3–6s (thinking mode). On timeout we
+      // fall into the existing degrade path (advance without a follow-up) instead
+      // of spinning on "AI 判断中" forever (2026-06-10 incident).
+      const res = await fetchWithTimeout(
+        "/api/generate-followup",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mainQuestion: mainQ.text,
+            conversationThread: exchanges.map((e) => ({
+              question: e.question.text,
+              answer: e.answer.transcript,
+            })),
+            jd,
+            resume,
+          }),
+        },
+        45_000
+      );
       const judgeMs = Date.now() - judgeStartedAt;
 
       if (res.ok) {
@@ -330,11 +338,11 @@ export default function InterviewStep() {
         });
         advanceToNext(exchanges);
       }
-    } catch {
+    } catch (err) {
       track(EVENTS.FOLLOWUP_DEGRADED, {
         mainIndex: currentMainIndex,
         depth: exchanges.length,
-        reason: "network",
+        reason: isTimeoutError(err) ? "timeout" : "network",
         latencyMs: Date.now() - judgeStartedAt,
       });
       advanceToNext(exchanges);

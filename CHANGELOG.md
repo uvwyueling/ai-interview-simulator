@@ -6,6 +6,20 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.9.1] — 2026-06-11
+
+### Added
+- **Client-side timeouts on all LLM calls** (`lib/fetchWithTimeout.ts`) — hardening from the 2026-06-10 incident, where hung upstream calls left the UI spinning on "AI 判断中" forever and even error tracking never fired (a fetch that never settles hits neither `.then` nor `.catch`). Per-route caps sized to each call's normal latency envelope, not one-size-fits-all:
+  - generate-questions: 60s (normal 5–13s) → clear error + retry
+  - generate-followup: 45s (normal 3–6s, thinking) → existing degrade path (advance without follow-up); `followup_degraded` now distinguishes `reason: "timeout"` vs `"network"`
+  - generate-feedback: 90s (v4-pro legitimately takes 30–60s for 1–2K tokens) → ErrorCard + retry; `feedback_failed` now carries `reason`
+- Friendly timeout error copy ("生成超时（AI 服务可能繁忙）…") instead of raw DOMException text
+
+### Notes
+- Helper runtime-verified against a deliberately hanging local server: aborts at the cap (±5ms), `isTimeoutError` classifies abort vs generic network errors correctly, fast responses pass through untouched
+
+---
+
 ## [0.9.0] — 2026-06-10
 
 ### Changed

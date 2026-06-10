@@ -8,6 +8,7 @@ import { feedbackToRadarDims, DIMENSION_LABELS } from "@/types/interview";
 import { useInterview } from "@/context/InterviewContext";
 import { generateReportHTML } from "@/lib/generateReport";
 import { track, EVENTS } from "@/lib/analytics";
+import { fetchWithTimeout, isTimeoutError } from "@/lib/fetchWithTimeout";
 
 const MOCK_FEEDBACK: Feedback = {
   overallScore: 80,
@@ -282,21 +283,28 @@ export default function FeedbackStep({ onRestart }: Props) {
 
     const startedAt = Date.now();
     try {
-      const res = await fetch("/api/generate-feedback", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mainQuestion: thread.mainQuestion.text,
-          thread: thread.exchanges.map((e) => ({
-            question: e.question.text,
-            answer: e.answer.transcript || "（未作答）",
-          })),
-          resume,
-          jd,
-          thinkingTime,
-          speakingTime,
-        }),
-      });
+      // 90s timeout: feedback generates 1–2K tokens on v4-pro, so normal calls
+      // can legitimately take 30–60s — the cap only catches true hangs and
+      // surfaces the existing ErrorCard + retry instead of an endless skeleton.
+      const res = await fetchWithTimeout(
+        "/api/generate-feedback",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mainQuestion: thread.mainQuestion.text,
+            thread: thread.exchanges.map((e) => ({
+              question: e.question.text,
+              answer: e.answer.transcript || "（未作答）",
+            })),
+            resume,
+            jd,
+            thinkingTime,
+            speakingTime,
+          }),
+        },
+        90_000
+      );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "生成反馈失败");
       setFeedbackAt(i, data as Feedback);
@@ -306,10 +314,18 @@ export default function FeedbackStep({ onRestart }: Props) {
         exchanges: thread.exchanges.length,
       });
     } catch (err) {
-      track(EVENTS.FEEDBACK_FAILED, { index: i, latencyMs: Date.now() - startedAt });
+      track(EVENTS.FEEDBACK_FAILED, {
+        index: i,
+        latencyMs: Date.now() - startedAt,
+        reason: isTimeoutError(err) ? "timeout" : "error",
+      });
       setFetchErrors((prev) => {
         const n = [...prev];
-        n[i] = err instanceof Error ? err.message : "生成反馈失败";
+        n[i] = isTimeoutError(err)
+          ? "生成超时（AI 服务可能繁忙），请点击重试"
+          : err instanceof Error
+          ? err.message
+          : "生成反馈失败";
         return n;
       });
     } finally {

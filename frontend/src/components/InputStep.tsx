@@ -4,6 +4,7 @@ import { useState, useRef } from "react";
 import { useInterview } from "@/context/InterviewContext";
 import type { Question } from "@/types/interview";
 import { track, EVENTS } from "@/lib/analytics";
+import { fetchWithTimeout, isTimeoutError } from "@/lib/fetchWithTimeout";
 
 const SAMPLE_RESUME = `张同学  ·  应届硕士
 教育: 计算机科学硕士, 2024
@@ -164,11 +165,17 @@ export default function InputStep() {
     setLoading(true);
     const startedAt = Date.now();
     try {
-      const res = await fetch("/api/generate-questions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ resume, jd }),
-      });
+      // 60s timeout: normal generation is 5–13s; a hang must surface as a
+      // retryable error instead of an infinite spinner (2026-06-10 incident).
+      const res = await fetchWithTimeout(
+        "/api/generate-questions",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ resume, jd }),
+        },
+        60_000
+      );
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || "生成失败，请重试");
@@ -179,8 +186,12 @@ export default function InputStep() {
         latencyMs: Date.now() - startedAt,
       });
       startInterview(data.questions, resume, jd, false);
-    } catch {
-      setError("网络错误，请检查连接后重试");
+    } catch (err) {
+      setError(
+        isTimeoutError(err)
+          ? "生成超时（AI 服务可能繁忙），请稍后重试"
+          : "网络错误，请检查连接后重试"
+      );
     } finally {
       setLoading(false);
     }
