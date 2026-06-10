@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
-import { MODELS } from "@/lib/models";
+import { MODELS, thinkingParam } from "@/lib/models";
+import { getLLM } from "@/lib/llmClient";
 import { rateLimit, getClientIp } from "@/lib/rateLimit";
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
@@ -50,19 +51,18 @@ const SYSTEM_PROMPT = `你是一位资深技术面试官（同时具备 HRBP 视
 
 // ─── LLM call with retry ──────────────────────────────────────────────────────
 
-const client = new Anthropic();
-
 async function callWithRetry(userMessage: string, maxAttempts = 2) {
   let lastError: Error = new Error("未知错误");
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      const message = await client.messages.create({
-        model: MODELS.lightweight,
-        max_tokens: 512,
-        system: [
-          { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
-        ],
+      const message = await getLLM().messages.create({
+        // Thinking mode is on here (per routing) — raise max_tokens well above
+        // budget_tokens so reasoning + the small JSON answer aren't truncated.
+        model: MODELS.followup.id,
+        max_tokens: 4096,
+        thinking: thinkingParam(MODELS.followup.thinking),
+        system: SYSTEM_PROMPT,
         messages: [{ role: "user", content: userMessage }],
       });
 

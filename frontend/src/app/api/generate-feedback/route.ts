@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
-import { MODELS } from "@/lib/models";
+import { MODELS, thinkingParam } from "@/lib/models";
+import { getLLM } from "@/lib/llmClient";
 import { rateLimit, getClientIp } from "@/lib/rateLimit";
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
@@ -121,40 +122,20 @@ const SYSTEM_PROMPT = `你是一位拥有 10 年经验的资深技术面试官�
 
 // ─── Core LLM call with retry ─────────────────────────────────────────────────
 
-const client = new Anthropic();
-
 async function callWithRetry(
-  cachedContext: string,
-  taskContent: string,
+  userMessage: string,
   maxAttempts: number = 2
 ): Promise<Feedback> {
   let lastError: Error = new Error("未知错误");
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      const response = await client.messages.create({
-        model: MODELS.quality,
+      const response = await getLLM().messages.create({
+        model: MODELS.feedback.id,
         max_tokens: 2000,
-        // Static system prompt cached. The résumé + JD are also cached (second
-        // breakpoint) — they're identical across the session's feedback calls,
-        // so calls 2/3 read them at ~10% price. The volatile task content
-        // (timing + question + thread) stays uncached after the breakpoint.
-        system: [
-          {
-            type: "text",
-            text: SYSTEM_PROMPT,
-            cache_control: { type: "ephemeral" },
-          },
-        ],
-        messages: [
-          {
-            role: "user",
-            content: [
-              { type: "text", text: cachedContext, cache_control: { type: "ephemeral" } },
-              { type: "text", text: taskContent },
-            ],
-          },
-        ],
+        thinking: thinkingParam(MODELS.feedback.thinking),
+        system: SYSTEM_PROMPT,
+        messages: [{ role: "user", content: userMessage }],
       });
 
       if (response.stop_reason === "max_tokens") {
@@ -238,13 +219,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     .join("\n\n");
 
   const timingNote = buildTimingNote(thinkingTime, speakingTime);
-  // Cached prefix: résumé + JD (identical across the session's feedback calls).
-  const cachedContext = `【候选人简历】\n${resume}\n\n【岗位 JD】\n${jd}`;
-  // Volatile suffix: timing + this question's thread (differs per call).
-  const taskContent = `${timingNote}\n\n【主面试问题】\n${mainQuestion}\n\n【完整对话记录（含追问）】\n${threadText}`;
+  const userMessage = `${timingNote}\n\n【候选人简历】\n${resume}\n\n【岗位 JD】\n${jd}\n\n【主面试问题】\n${mainQuestion}\n\n【完整对话记录（含追问）】\n${threadText}`;
 
   try {
-    const feedback = await callWithRetry(cachedContext, taskContent);
+    const feedback = await callWithRetry(userMessage);
     return NextResponse.json(feedback);
   } catch (err) {
     console.error("[generate-feedback] final error:", err);

@@ -6,6 +6,25 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.9.0] — 2026-06-10
+
+### Changed
+- **Switched the AI backend from Claude to DeepSeek** (so billing is visible in the user's own DeepSeek console). Done via DeepSeek's **Anthropic-compatible endpoint** (`https://api.deepseek.com/anthropic`) — we keep `@anthropic-ai/sdk` and only repoint the backend, so request/response parsing, Zod validation, retry, and error handling are unchanged
+- **New model routing** (`src/lib/models.ts`), per product decision:
+  - generate-questions → `deepseek-v4-flash`, non-thinking
+  - generate-followup → `deepseek-v4-flash`, **thinking** (reason about whether to probe)
+  - generate-feedback → `deepseek-v4-pro`, non-thinking
+- New `src/lib/llmClient.ts` — lazy singleton pointing the Anthropic SDK at DeepSeek (`DEEPSEEK_API_KEY` + base URL)
+- `generate-followup` `max_tokens` 512 → 4096 (thinking mode needs room for reasoning + the JSON answer)
+- Removed now-inert `cache_control` blocks (DeepSeek ignores them and caches context automatically); feedback request simplified back to a single user message
+- Env: `ANTHROPIC_API_KEY` → `DEEPSEEK_API_KEY` (`.env.example` updated); `CLAUDE.md` tech-stack line updated to reflect the switch
+
+### Notes
+- ⚠️ Not yet runtime-tested — requires `DEEPSEEK_API_KEY` (cannot be verified without the user's key). Verify: model id strings resolve, thinking on/off behaves per routing, and feedback JSON still parses. See migration checklist handed to the user
+- Thinking/non-thinking is toggled via the `thinking` field; DeepSeek ignores `budget_tokens`
+
+---
+
 ## [0.8.5] — 2026-06-10
 
 ### Changed

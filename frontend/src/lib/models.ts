@@ -1,29 +1,29 @@
 /**
- * Centralised model routing for the AI Interview Simulator.
+ * Centralised model routing — DeepSeek (via its Anthropic-compatible endpoint).
  *
- * Change a model here and every route picks it up automatically.
+ * We keep the @anthropic-ai/sdk and only repoint the backend (see lib/llmClient).
+ * Each route picks a model id + whether to run in "thinking" mode.
  *
- * Strategy
- * ────────
- *   lightweight  haiku   – high-frequency, speed-critical, low-complexity tasks
- *                          (binary follow-up decisions, tiny JSON output)
- *   standard     sonnet  – one-off structured generation that shapes the whole session
- *                          (question tailoring requires deep resume+JD comprehension)
- *   quality      sonnet  – the product's primary value delivery
- *                          (multi-source evaluation with grounded bullet evidence)
+ * Routing (per product decision):
+ *   generate-questions : deepseek-v4-flash · non-thinking  (structured 3-question output)
+ *   generate-followup  : deepseek-v4-flash · thinking      (reason about whether to probe)
+ *   generate-feedback  : deepseek-v4-pro   · non-thinking  (deep multi-dimensional eval)
  *
- * Cost estimate per session (worst-case: 3 main Qs × 3 follow-ups):
- *   generate-followup  ×9  @ haiku  ≈ $0.027
- *   generate-questions ×1  @ sonnet ≈ $0.010
- *   generate-feedback  ×3  @ sonnet ≈ $0.135
- *   ─────────────────────────────────────────
- *   Total                            ≈ $0.172 / session
+ * Notes:
+ *   - "thinking" is toggled via the `thinking` field; DeepSeek ignores budget_tokens.
+ *   - cache_control is ignored by DeepSeek (it does context caching automatically).
  */
+
 export const MODELS = {
-  /** generate-followup: binary yes/no + optional short follow-up question */
-  lightweight: "claude-haiku-4-5",
-  /** generate-questions: 3 tailored questions from resume + JD */
-  standard: "claude-sonnet-4-6",
-  /** generate-feedback: deep multi-dimensional evaluation (main deliverable) */
-  quality: "claude-sonnet-4-6",
+  questions: { id: "deepseek-v4-flash", thinking: false },
+  followup: { id: "deepseek-v4-flash", thinking: true },
+  feedback: { id: "deepseek-v4-pro", thinking: false },
 } as const;
+
+/** Build the Anthropic-SDK `thinking` param. budget_tokens is ignored by DeepSeek
+ *  but the SDK type requires it when enabled; keep it < the call's max_tokens. */
+export function thinkingParam(enabled: boolean) {
+  return enabled
+    ? ({ type: "enabled", budget_tokens: 1024 } as const)
+    : ({ type: "disabled" } as const);
+}

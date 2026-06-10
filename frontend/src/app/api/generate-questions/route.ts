@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
-import { MODELS } from "@/lib/models";
+import { MODELS, thinkingParam } from "@/lib/models";
+import { getLLM } from "@/lib/llmClient";
 import { rateLimit, getClientIp } from "@/lib/rateLimit";
 
 const RequestSchema = z.object({
@@ -22,8 +23,6 @@ const ResponseSchema = z.object({
 
 export type Question = z.infer<typeof QuestionSchema>;
 export type GenerateQuestionsResponse = z.infer<typeof ResponseSchema>;
-
-const client = new Anthropic();
 
 const SYSTEM_PROMPT = `你是一位拥有 10 年经验的资深技术面试官。
 根据候选人的简历和岗位 JD，生成 3 个深度定制的主面试问题。
@@ -54,12 +53,11 @@ async function callWithRetry(userMessage: string, maxAttempts = 3) {
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      const message = await client.messages.create({
-        model: MODELS.standard,
+      const message = await getLLM().messages.create({
+        model: MODELS.questions.id,
         max_tokens: 1024,
-        system: [
-          { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
-        ],
+        thinking: thinkingParam(MODELS.questions.thinking),
+        system: SYSTEM_PROMPT,
         messages: [{ role: "user", content: userMessage }],
       });
 

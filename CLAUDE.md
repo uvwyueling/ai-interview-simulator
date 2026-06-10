@@ -3,10 +3,10 @@
 ## 项目概述
 AI 面试模拟器 Demo。用户上传简历+JD → AI 生成问题 → 语音回答 → AI 反馈+可视化评分。
 
-## 技术栈（不可改）
+## 技术栈
 - Next.js 14 + React + TypeScript + Tailwind + shadcn/ui + Recharts
 - 语音：Web Speech API
-- AI：Next.js API Routes + Claude API
+- AI：Next.js API Routes + DeepSeek（经其 Anthropic 兼容端点 https://api.deepseek.com/anthropic 调用，仍用 @anthropic-ai/sdk）。v0.9.0 起由 Claude 迁移至 DeepSeek（账单自管可见）。模型路由见 src/lib/models.ts
 
 ## 设计规范（必须遵守）
 - 主色：Indigo-600, 辅色：Slate-50

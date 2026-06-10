@@ -14,6 +14,14 @@
 - [x] API 路由基础防滥用 —— lib/rateLimit 按 IP 内存限流（3 个 LLM 路由共享 40/min，track 200/min），429 + Retry-After。serverless 为尽力而为，公开上线再换 Upstash/KV
 - [x] 隐私政策 / 数据用途简述 —— 新建 /privacy 页（简历不留存 / 音频不录制 / 匿名统计 / 无账号 / 不用于训练），输入页隐私条已链接
 
+### 模型迁移 Claude → DeepSeek（v0.9.0）🔄 待实测
+- [x] 改用 DeepSeek 的 Anthropic 兼容端点（保留 @anthropic-ai/sdk，只换 baseURL/key/模型名）
+- [x] 模型路由：出题 v4-flash 非思考 / 追问 v4-flash 思考 / 反馈 v4-pro 非思考
+- [x] 新增 lib/llmClient.ts；models.ts 重写；followup max_tokens→4096；移除失效的 cache_control
+- [x] .env.example + CLAUDE.md 同步
+- [ ] **用户侧**：① frontend/.env.local 加 DEEPSEEK_API_KEY（删 ANTHROPIC_API_KEY 依赖）② Vercel 配 DEEPSEEK_API_KEY ③ 设 spend limit
+- [ ] **实测验证**（只有配好 key 才能跑）：模型名能解析、思考开/关行为符合路由、反馈 JSON 仍能解析
+
 ### 用户实测反馈（2026-06-10）✅ 已修复（v0.8.3）
 - [x] 宽屏追问界面布局崩坏 —— grid 两列加 min-w-0（truncate/nowrap 撑爆 1fr 列的 min-content）
 - [x] 误导性 JD 链接提示文案连虚线框删除（产品无抓链接能力）
