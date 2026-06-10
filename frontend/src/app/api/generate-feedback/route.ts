@@ -22,6 +22,10 @@ const RequestSchema = z.object({
   speakingTime: z.number().min(0),
 });
 
+// "Instruct tight, validate loose": the prompt asks for exactly 2 bullets (trims
+// output — the dominant cost on sonnet $15/M), but the schema still tolerates 3
+// as a safety valve so an occasional extra bullet doesn't trigger an expensive
+// validation-failure retry.
 const DimensionBullets = z.array(z.string().min(1)).min(2).max(3);
 
 const FeedbackSchema = z.object({
@@ -85,7 +89,7 @@ const SYSTEM_PROMPT = `你是一位拥有 10 年经验的资深技术面试官�
 【dimensionDetails 要求】★ 重要
 不要写空洞通用语（如"沟通流畅、表达清晰"），必须**援引候选人的具体回答片段或简历经历**作为证据，并指出与 JD 的对应关系。
 
-每个维度输出 2–3 条 bullet（每条 25–60 字），覆盖以下角度任选其二：
+每个维度输出**恰好 2 条** bullet（每条 25–60 字），覆盖以下角度任选其二：
 1. 这一维度上候选人**做得好的具体行为或表达**（引用回答中的关键句/技术名词/项目细节）
 2. 这一维度上**暴露出的不足**（哪一句、哪个环节本可以更好）
 3. 结合 JD 要求**给出具体可执行的改进动作**（不是空泛的"加强沟通"，而是"下次可以在介绍架构前用一句话定位读者，例如…"）
@@ -111,15 +115,18 @@ const SYSTEM_PROMPT = `你是一位拥有 10 年经验的资深技术面试官�
   "strengths": ["具体优点1", "具体优点2"],
   "improvements": ["具体改进建议1", "具体改进建议2"],
   "thinkingTimeFeedback": "关于思考节奏的个性化反馈..."
-}`;
+}
+
+补充约束：strengths 与 improvements 各输出 2–3 条精炼要点（每项最多 3 条）。`;
 
 // ─── Core LLM call with retry ─────────────────────────────────────────────────
 
 const client = new Anthropic();
 
 async function callWithRetry(
-  userMessage: string,
-  maxAttempts: number = 3
+  cachedContext: string,
+  taskContent: string,
+  maxAttempts: number = 2
 ): Promise<Feedback> {
   let lastError: Error = new Error("未知错误");
 
@@ -128,8 +135,10 @@ async function callWithRetry(
       const response = await client.messages.create({
         model: MODELS.quality,
         max_tokens: 2000,
-        // Static system prompt marked for prompt caching — the 3 staggered
-        // feedback calls in a session reuse the cached prefix.
+        // Static system prompt cached. The résumé + JD are also cached (second
+        // breakpoint) — they're identical across the session's feedback calls,
+        // so calls 2/3 read them at ~10% price. The volatile task content
+        // (timing + question + thread) stays uncached after the breakpoint.
         system: [
           {
             type: "text",
@@ -137,7 +146,15 @@ async function callWithRetry(
             cache_control: { type: "ephemeral" },
           },
         ],
-        messages: [{ role: "user", content: userMessage }],
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: cachedContext, cache_control: { type: "ephemeral" } },
+              { type: "text", text: taskContent },
+            ],
+          },
+        ],
       });
 
       if (response.stop_reason === "max_tokens") {
@@ -221,10 +238,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     .join("\n\n");
 
   const timingNote = buildTimingNote(thinkingTime, speakingTime);
-  const userMessage = `${timingNote}\n\n【主面试问题】\n${mainQuestion}\n\n【完整对话记录（含追问）】\n${threadText}\n\n【候选人简历】\n${resume}\n\n【岗位 JD】\n${jd}`;
+  // Cached prefix: résumé + JD (identical across the session's feedback calls).
+  const cachedContext = `【候选人简历】\n${resume}\n\n【岗位 JD】\n${jd}`;
+  // Volatile suffix: timing + this question's thread (differs per call).
+  const taskContent = `${timingNote}\n\n【主面试问题】\n${mainQuestion}\n\n【完整对话记录（含追问）】\n${threadText}`;
 
   try {
-    const feedback = await callWithRetry(userMessage);
+    const feedback = await callWithRetry(cachedContext, taskContent);
     return NextResponse.json(feedback);
   } catch (err) {
     console.error("[generate-feedback] final error:", err);

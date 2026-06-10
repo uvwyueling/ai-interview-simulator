@@ -6,6 +6,20 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.8.5] — 2026-06-10
+
+### Changed
+- **Feedback cost optimization** (per-interview cost ~$0.25 → ~$0.20):
+  - Retries on `/api/generate-feedback` reduced 3 → 2 (sonnet output is the dominant cost; retries are the worst-case multiplier)
+  - Output trimmed via prompt: each dimension now asked for exactly 2 evidence bullets (was 2–3). Schema kept at max 3 ("instruct tight, validate loose") so an occasional extra bullet does NOT trigger an expensive validation-failure retry
+  - Résumé + JD moved into a dedicated cached content block (`cache_control`) ahead of the volatile task content; the 3 staggered feedback calls in a session now read the ~3–4K-token résumé/JD prefix at ~10% price (calls 2 & 3 hit cache)
+
+### Notes
+- These are modest savings (~15–20%/interview). They do NOT explain the earlier $4 draw-down (that is accumulated dev-testing spend — confirm on console.anthropic.com Usage). The durable safeguard is a spend limit on the key
+- The follow-up loop was deliberately left unchanged: it runs on Haiku and does not send the résumé; its growing conversation thread is volatile and inherently uncacheable, so prompt caching can't help it
+
+---
+
 ## [0.8.4] — 2026-06-10
 
 ### Changed

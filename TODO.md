@@ -19,7 +19,9 @@
 - [x] 误导性 JD 链接提示文案连虚线框删除（产品无抓链接能力）
 - [x] PDF 解析线上失败 —— 排查：线上 worker 服务正常、本地管线正常；已切换 legacy 构建加固。用户复测结论：Chrome ✓ / Safari 仍失败（低于 legacy 支持下限）。v0.8.4 改为预期管理：Chrome 徽章文案覆盖 PDF + 失败报错指引改用 Chrome。不再深挖 Safari 兼容（内测阶段投入产出比低）
 - [x] （顺带发现）dev 下 StrictMode 导致会话恢复失效 —— isHydrated 由 ref 改为 state
-- [ ] 成本异常排查（用户侧操作）：console.anthropic.com 查 Usage 明细；Supabase 查 followup_degraded 确认第三题降级原因；给 key 设 spend limit
+- [x] 成本优化（v0.8.5）：feedback 重试 3→2、维度证据 2-3→2（指令收紧/校验放宽防重试反噬）、简历+JD 做成缓存前缀（3 次反馈调用复用，~10% 价命中）。单场 ~$0.25→~$0.20
+- [ ] 成本异常排查（用户侧，仍待办）：console.anthropic.com 查 Usage 确认 $4 为开发累计；给 key 设 spend limit（这才是防"静默花光"的根本）
+- [ ] 复核：Supabase 无 followup_degraded → 第三题无追问是 AI 正常判断、非余额耗尽；反馈失败是余额在最后阶段耗尽
 
 ### P2 · 内测期间观察 / 迭代（非阻断）
 - [ ] 历史进步追踪（Phase 1 已设计）—— 建议用内测先验证需求，再决定是否建
