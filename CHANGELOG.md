@@ -6,6 +6,23 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.9.2] — 2026-06-11
+
+### Added
+- **Two front-of-funnel events** so we can see drop-off before the existing `input_completed → interview_completed → feedback_viewed` steps:
+  - `landed` — fires on page load (top of funnel). Props: `viewport_width` (raw `window.innerWidth`, not bucketed), `referrer` (raw `document.referrer`), plus `src` (auto, see below)
+  - `app_viewed` — fires when the upload UI actually renders, i.e. past any (future) invite wall; once per visit
+- **Acquisition source tracking** (`src`) — read from the landing URL's `?src=` (e.g. `?src=douban`, `?src=xhs`), defaults to `direct`. First-touch, persisted in `sessionStorage`, and **auto-injected into every event** so the whole funnel can be sliced by source — not just converted users
+- **`time_since_landed_ms`** auto-injected into every event — `Date.now()` minus a landing timestamp anchored once per visit (`sessionStorage`); computed at fire time, no running timer
+
+### Notes
+- No backend/schema change — `/api/track`'s `props` is an open record; new events carry `env` like all others (`props->>'env'='prod'` filtering unchanged)
+- `landed` fires per page load (refreshes repeat it — dedupe with `count(distinct anonId)`); `app_viewed` is once per visit
+- ⚠️ There is **no invite wall in the code yet** — `landed → app_viewed` currently fire back-to-back. The instrumentation is pre-wired: once a wall renders before `InputStep`, `app_viewed` automatically becomes "passed the wall" with no further changes
+- Verification: client-side state confirmed in a real browser (`src=douban` captured & persisted, landing anchored, `app_viewed` guarded once). DB-side insert not re-confirmed this run — the machine briefly lost network to Supabase; the POST path is unchanged from the events already flowing all session
+
+---
+
 ## [0.9.1] — 2026-06-11
 
 ### Added

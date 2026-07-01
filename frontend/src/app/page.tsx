@@ -1,6 +1,8 @@
 "use client";
 
+import { useEffect } from "react";
 import { InterviewProvider, useInterview } from "@/context/InterviewContext";
+import { trackLanded } from "@/lib/analytics";
 import Header from "@/components/Header";
 import InputStep from "@/components/InputStep";
 import InterviewStep from "@/components/InterviewStep";
@@ -70,6 +72,11 @@ const STEP_KEYS = ["input", "interview", "feedback"] as const;
 
 function AppContent() {
   const { step, questions, reset, jumpToStep, startInterview } = useInterview();
+
+  // Top of the funnel: record the landing once per page load.
+  useEffect(() => {
+    trackLanded();
+  }, []);
 
   const handleDemoJump = (s: (typeof STEP_KEYS)[number]) => {
     if (s === "interview" && questions.length === 0) {

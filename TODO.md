@@ -32,6 +32,12 @@
 - [ ] 成本异常排查（用户侧，仍待办）：console.anthropic.com 查 Usage 确认 $4 为开发累计；给 key 设 spend limit（这才是防"静默花光"的根本）
 - [ ] 复核：Supabase 无 followup_degraded → 第三题无追问是 AI 正常判断、非余额耗尽；反馈失败是余额在最后阶段耗尽
 
+### 渠道归因埋点（v0.9.2）✅
+- [x] 新增 landed / app_viewed 两个前置漏斗事件（app_viewed 为将来邀请墙预埋）
+- [x] src（?src=douban/xhs，缺省 direct）first-touch 持久化，自动注入所有事件
+- [x] 每事件 time_since_landed_ms（落地锚点 sessionStorage，触发时现算）
+- [ ] 投放链接用 `?src=douban` / `?src=xhs`；DB 侧待网络恢复后在 Supabase 确认一条 landed 的 props
+
 ### P2 · 内测期间观察 / 迭代（非阻断）
 - [ ] 历史进步追踪（Phase 1 已设计）—— 建议用内测先验证需求，再决定是否建
 - [ ] AI 评分校准 —— 用内测期 👍👎 评分 + 真实反馈，检验评分是否合理、稳定

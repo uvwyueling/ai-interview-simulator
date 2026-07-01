@@ -11,6 +11,8 @@ import { getAnonId, getSessionId } from "./identity";
 
 /** Canonical event names — use these constants, never raw strings, to avoid typos. */
 export const EVENTS = {
+  LANDED: "landed", // page loaded at the URL (top of funnel)
+  APP_VIEWED: "app_viewed", // upload UI actually rendered (i.e. past any invite wall)
   INPUT_COMPLETED: "input_completed",
   QUESTIONS_GENERATED: "questions_generated",
   INTERVIEW_STARTED: "interview_started",
@@ -33,12 +35,53 @@ export type EventName = (typeof EVENTS)[keyof typeof EVENTS];
 const APP_ENV: "prod" | "dev" =
   process.env.NODE_ENV === "production" ? "prod" : "dev";
 
+const SRC_KEY = "echo_src";
+const LANDED_AT_KEY = "echo_landed_at";
+const APP_VIEWED_KEY = "echo_app_viewed";
+
+/**
+ * Acquisition source from the landing URL's `?src=` (e.g. douban / xhs).
+ * First-touch + persisted (sessionStorage) so it sticks to every event for the
+ * whole visit, even after the param drops off the URL (SPA navigation). No
+ * param → "direct". Auto-injected into every event by track().
+ */
+function getSource(): string {
+  if (typeof window === "undefined") return "direct";
+  try {
+    const stored = sessionStorage.getItem(SRC_KEY);
+    if (stored) return stored;
+    const fromUrl = new URLSearchParams(window.location.search).get("src");
+    const clean = fromUrl?.trim().slice(0, 32) || "direct"; // untrusted → cap length
+    sessionStorage.setItem(SRC_KEY, clean);
+    return clean;
+  } catch {
+    return "direct";
+  }
+}
+
+/** ms since the visit's first landing, computed at call time (no running timer). */
+function timeSinceLanded(): number | undefined {
+  if (typeof window === "undefined") return undefined;
+  try {
+    const v = sessionStorage.getItem(LANDED_AT_KEY);
+    return v ? Date.now() - Number(v) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function track(event: EventName, props: Record<string, unknown> = {}): void {
   if (typeof window === "undefined") return;
   try {
+    const tsl = timeSinceLanded();
     const body = JSON.stringify({
       event,
-      props: { ...props, env: APP_ENV },
+      props: {
+        ...props,
+        env: APP_ENV,
+        src: getSource(),
+        ...(tsl !== undefined ? { time_since_landed_ms: tsl } : {}),
+      },
       anonId: getAnonId(),
       sessionId: getSessionId(),
       ts: Date.now(),
@@ -54,4 +97,39 @@ export function track(event: EventName, props: Record<string, unknown> = {}): vo
   } catch {
     /* swallow */
   }
+}
+
+// Fires once per page load (module flag also de-dups React StrictMode's double
+// effect invoke in dev). Refreshes produce a new `landed` — dedupe by anonId.
+let landedFired = false;
+
+/** Call on app mount: anchors the visit clock and records the landing. */
+export function trackLanded(): void {
+  if (typeof window === "undefined" || landedFired) return;
+  landedFired = true;
+  try {
+    // Anchor once per visit so time_since_landed_ms stays continuous across refreshes.
+    if (!sessionStorage.getItem(LANDED_AT_KEY)) {
+      sessionStorage.setItem(LANDED_AT_KEY, String(Date.now()));
+    }
+  } catch {
+    /* ignore */
+  }
+  // src is auto-injected by track(); viewport_width/referrer live only on `landed`.
+  track(EVENTS.LANDED, {
+    viewport_width: window.innerWidth,
+    referrer: document.referrer || "",
+  });
+}
+
+/** Call when the upload UI is actually shown. Fires once per visit (survives refresh). */
+export function trackAppViewed(): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (sessionStorage.getItem(APP_VIEWED_KEY)) return;
+    sessionStorage.setItem(APP_VIEWED_KEY, "1");
+  } catch {
+    /* ignore — fall through and still fire once for this render */
+  }
+  track(EVENTS.APP_VIEWED);
 }
