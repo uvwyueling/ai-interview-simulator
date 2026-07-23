@@ -1,5 +1,37 @@
 # 开发 TODO 清单
 
+## 📣 发帖引流前清单（用户 2026-06-11 提出 · 已与代码比对）
+> 来源：用户手写清单 A–I。每条附 Claude 的实际代码核实结论。优先级沿用用户标注（🔴 发帖前必做 / 🟡 重要 / 🟢 分析纪律）。
+
+- [x] **A · DeepSeek key 是否暴露在前端** 🔴 —— ✅ 已核查通过：key 仅在 lib/llmClient.ts（服务端），只被 3 个 API 路由 import；无 NEXT_PUBLIC_ 前缀、无硬编码；用真实 key 反查生产客户端 bundle（.next/static）零命中。**安全，无需改动。**（提醒：Vercel 的 DEEPSEEK_API_KEY 也须为普通变量）
+
+### 🔴 发帖前必做
+- [x] **B · 追问疲劳软化（方案 2️⃣ + 2a）** ✅ 已实现（v0.10.0，含品牌营销 persona 真实 API 验证）—— 用户答不上来时，让**下一轮追问**自动变软（教学式引导），而非提交前拦截、也非强按回原题。真面试官式的进退。
+  - **触发信号**：前端把上一轮回答的非空字符数 `lastAnswerLen` 传给 `/api/generate-followup`；阈值 `30`（真实数据"塌缩尾巴"为 {12,12,37}，30 抓到 12/12 放过 37/48+，误伤低）
+  - **LLM 三个决策全部在追问 prompt 里**（不加新路由、不改状态机）：① 上轮 <30 → **倾向继续追问**（2a：给"接得住"的机会）；② 下一问的题干**主动降级**——语气考察→引导、换更具体好接的角度、题干里给 1–2 个方向作脚手架；③ 硬上限每主题 3 次追问不变
+  - **自校准埋点**：`followup_triggered` props 加 `wasSoftened: boolean`（前端按同一条件 `lastAnswerLen<30` 判断，与 LLM 侧同源）；不新增事件
+  - **文件**：`api/generate-followup/route.ts`（Zod 加 `lastAnswerLen: number.optional()`；SYSTEM_PROMPT 嵌软化规则；lastAnswerLen 进 userMessage）+ `InterviewStep.tsx`（`runFollowUpJudgment` 算 lastAnswerLen 并进 fetch body）
+- [ ] **C · 反馈生成 25s 干等** —— 实测 23.7/27.5/26.5s，现状仅骨架屏。发帖前必做：流式输出 / 进度提示 / 先给部分结果（三选一或组合）
+- [ ] **E · 邀请墙：冷启动拆不拆** —— ⚠️ 代码目前**没有邀请墙**（"拆"不成立，真问题是"建不建"）。**发帖前必须做决定**：开放 vs 建墙（张力＝跑通漏斗拿数据 vs 控成本/防刷）。Claude 已给精简 pro/con，待用户拍板
+
+### 🟡 重要（发帖前后）
+- [ ] **D · "开口说话"埋点** —— 现有 14 事件无此盲区。新增 `mic_permission_granted` / `first_recording_started`，捕捉 interview_started 之后、首条 answer_submitted 之前（开麦瞬间）的流失。**是 I 的前置依赖**
+- [x] **F · 题库/生成器岗位通用性** ✅ 已实现（v0.10.0，含品牌营销 persona 真实 API 验证）—— **② 全改 + ① 轻改，不对称处理**（不做双 persona demo）。理由：生成器出戏＝反馈时刻的信任摧毁+公开差评（最贵）；demo 出戏＝零投入的首印象流失（便宜，已有"仅供预览"横幅缓冲）。
+  - **② 全改（约 1–2h）· 面试官人设与出题/评分改为岗位自适应**（技术偏向贯穿 4 处，需一并改）：
+    - `generate-questions` SYSTEM_PROMPT：「资深**技术**面试官」→「资深面试官（按 JD 判断岗位方向）」；删掉硬编码「第 2 题：系统设计或技术深度」，改为「按该岗位核心能力出题」。**三个 prompt 都加兜底**：如无法从 JD 判断岗位方向，就按通用面试官路线出题，避免技术假设
+    - `generate-followup` SYSTEM_PROMPT：追问标准里「技术选型理由 / 技术知识盲区」→ 泛化为「该岗位关键能力的深度与证据」
+    - `generate-feedback` SYSTEM_PROMPT：「资深**技术**面试官」+ 维度定义 `technicalDepth`「技术细节充分程度」→ 泛化为「该岗位核心专业能力的深度」
+    - UI 维度标签：`types/interview.ts` 的 `DIMENSION_LABELS.technicalDepth`「技术深度」→「**专业深度**」。⚠️ **内部字段 key `technicalDepth` 保持不动**——零 Zod/schema 破坏、无数据迁移；PDF 报告与雷达图走 DIMENSION_LABELS 自动更新
+  - **① 轻改（约 10min）· demo 横幅加一句预期管理**（不把示例题改通用，以免掩杀"题目为简历定制"这个核心卖点）：
+    - 文案：「以上为虚拟技术岗候选人的演示——上传你自己的简历后，题目将完全围绕你的背景生成」
+    - 位置：InterviewStep 的示例数据横幅处（demo 模式）
+  - **暂不做**：双 persona demo（技术+非技术两套示例）——投入产出比低，待内测数据显示 demo 路径流失严重再议
+- [ ] **G · 发帖前验证流程** —— 无痕浏览器走 landed→app_viewed→input_completed；手机真机点 xhs 那条链接；回 Supabase 确认 src 正确入库（与 v0.9.2 待验证项重合）
+- [ ] **H · 推广文案预期管理** —— 文案写明"准备 30–40 分钟、找个能出声的地方"（净面试约 26 分钟）。降跳出 + 对应 ab51ebf5 首次失败原因（开麦环境没准备好）
+
+### 🟢 分析纪律（非代码待办，写 SQL 时的习惯）
+- [ ] **I · 漏斗去噪口径** —— 所有漏斗数字先排除"无真实互动"的会话；真实互动信号＝ `first_recording_started`（决策已定，依赖 D 先落地）。否则每天 2–5 个机器人底噪永久污染转化率
+
 ## 🚀 内测前清单（Pre-Beta）— 当前焦点
 > 资深 PM 判断（2026-06-09）：核心闭环稳固、已上线、有数据闭环、移动端可用、隐私表述诚实——
 > **基本具备小范围内测条件**。但发布前需先清掉几个"会误导真实用户 / 污染内测数据"的问题（约 1–2 小时）。

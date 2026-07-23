@@ -50,7 +50,7 @@ export type Feedback = {
 
 export const DIMENSION_LABELS: Record<keyof FeedbackDimensions, string> = {
   communication: "沟通能力",
-  technicalDepth: "技术深度",
+  technicalDepth: "专业深度",
   logicalThinking: "逻辑思维",
   clarity: "表达清晰度",
   jobFit: "岗位匹配度",

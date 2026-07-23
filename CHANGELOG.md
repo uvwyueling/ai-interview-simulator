@@ -6,6 +6,20 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.10.0] — 2026-06-11
+
+### Changed
+- **F · Job-neutral prompts (② full change)** — the "resume résumé + JD" pipeline no longer assumes a technical role. All three server prompts (generate-questions, generate-followup, generate-feedback) now open with "先根据岗位 JD 判断岗位方向 …；如无法判断就按通用面试官路线，避免技术假设". The hardcoded "第 2 题：系统设计或技术深度" is gone; feedback's `technicalDepth` dimension is redefined as "该岗位核心专业能力的深度". UI label `DIMENSION_LABELS.technicalDepth` "技术深度" → "**专业深度**". **Internal key `technicalDepth` unchanged** — zero Zod/schema break, no data migration; radar chart and PDF report auto-pick up the label via existing plumbing
+- **F · Demo banner expectation-setting (① light change)** — banner in the mock interview now says "以上为虚拟技术岗候选人的演示——上传你自己的简历后，题目将完全围绕你的背景生成", protecting non-technical demo visitors from thinking the product only serves technical roles
+- **B · Adaptive follow-up softening (plan 2️⃣ + 2a)** — when the last answer is short (non-whitespace chars `< 30`), the follow-up prompt shifts from "考察" to "引导": it prefers to continue (giving the candidate a chance to reconnect), switches to a more concrete/answerable angle, and provides 1–2 directions as scaffolding in the question stem itself. Not a UI popup — the softening lives inside the next follow-up question so it feels like an interviewer reading the room, not an interruption
+- API `generate-followup` request schema gained `lastAnswerLen: z.number().int().min(0).optional()`; frontend computes it in `runFollowUpJudgment` and sends alongside
+- `followup_triggered` event now carries `wasSoftened: boolean` and `lastAnswerLen: number` for self-calibration (are we softening too often? does softening actually lift the next answer?)
+
+### Verified
+- Real API sanity check with a non-technical persona (品牌营销专员 candidate + JD): a normal-length answer draws an abstract deep-dive follow-up ("关键词筛选的逻辑…如何平衡品牌词/品类词/场景词"); a 9-char answer ("就是一个口红推广") draws a softened one that opens with "**能简单展开一下吗**" and provides three scaffolding angles ("哪个平台/什么人群/你具体负责了哪部分"). Both prompts stayed marketing-professional — no drift into technical questioning. F and B both behave as designed
+
+---
+
 ## [0.9.2] — 2026-06-11
 
 ### Added

@@ -291,6 +291,12 @@ export default function InterviewStep() {
   const runFollowUpJudgment = async (exchanges: Exchange[]) => {
     setIsJudging(true);
     const judgeStartedAt = Date.now();
+    // B / plan 2a: non-whitespace char count of the most recent answer, used
+    // by the follow-up prompt to soften the next question when the candidate
+    // is clearly struggling. Threshold 30 matches the prompt's rule.
+    const lastAnswerLen = exchanges[exchanges.length - 1].answer.transcript
+      .replace(/\s/g, "").length;
+    const wasSoftened = lastAnswerLen < 30;
     try {
       // 45s timeout: judgments normally take 3–6s (thinking mode). On timeout we
       // fall into the existing degrade path (advance without a follow-up) instead
@@ -308,6 +314,7 @@ export default function InterviewStep() {
             })),
             jd,
             resume,
+            lastAnswerLen,
           }),
         },
         45_000
@@ -324,6 +331,8 @@ export default function InterviewStep() {
             mainIndex: currentMainIndex,
             depth: exchanges.length,
             latencyMs: judgeMs,
+            wasSoftened,
+            lastAnswerLen,
           });
           setPendingFollowUp(data.followUpQuestion);
         } else {
@@ -469,7 +478,7 @@ export default function InterviewStep() {
                 示例数据 · 仅供预览
               </div>
               <div className="text-[12px] text-amber-800/80 mt-0.5">
-                这是一份虚拟简历与岗位生成的演示。想体验真实 AI 面试评测，请返回上传你的简历与 JD。
+                以上为虚拟技术岗候选人的演示——上传你自己的简历后，题目将完全围绕你的背景生成。想体验真实 AI 面试评测，请返回上传你的简历与 JD。
               </div>
             </div>
           </div>
