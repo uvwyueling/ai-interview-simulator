@@ -127,6 +127,52 @@ function RadarCardSkeleton() {
   );
 }
 
+// C · progress indication — replaces the static skeleton during the 20–30s
+// feedback generation with an alive panel: rotating stage text + an HONEST time
+// estimate + REAL progress (doneCount/total, since the 3 calls return staggered).
+const EVAL_MESSAGES = [
+  "正在综合你这道题的全部回答…",
+  "正在评估五个能力维度…",
+  "正在生成能力雷达图…",
+  "正在提炼优点与改进建议…",
+];
+
+function EvaluatingPanel({ doneCount, total }: { doneCount: number; total: number }) {
+  const [msgIdx, setMsgIdx] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setMsgIdx((i) => (i + 1) % EVAL_MESSAGES.length), 2500);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <div className="lg:col-span-3 bg-white rounded-2xl ring-1 ring-slate-200 ring-soft p-10 flex flex-col items-center justify-center gap-5 min-h-[320px] lg:min-h-0">
+      <div className="relative w-14 h-14">
+        <svg className="w-14 h-14 text-slate-200" viewBox="0 0 36 36" fill="none">
+          <circle cx="18" cy="18" r="15" stroke="currentColor" strokeWidth="3" />
+        </svg>
+        <svg className="absolute inset-0 w-14 h-14 text-indigo-500 animate-spin" viewBox="0 0 36 36" fill="none">
+          <path d="M18 3 a15 15 0 0 1 15 15" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+        </svg>
+      </div>
+      <div className="text-center">
+        <div className="text-[15px] font-medium text-slate-800 transition-opacity">
+          {EVAL_MESSAGES[msgIdx]}
+        </div>
+        <div className="text-[13px] text-slate-400 mt-1.5">
+          {total > 1 ? `已完成 ${doneCount} / ${total} 题 · ` : ""}每题约需 20–30 秒，请稍候
+        </div>
+      </div>
+      {total > 1 && (
+        <div className="w-56 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+          <div
+            className="h-full bg-indigo-500 rounded-full transition-all duration-500"
+            style={{ width: `${(doneCount / total) * 100}%` }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ErrorCard({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
     <div className="lg:col-span-3 bg-white rounded-2xl ring-1 ring-rose-200 p-10 flex flex-col items-center gap-4 text-center">
@@ -241,11 +287,12 @@ export default function FeedbackStep({ onRestart }: Props) {
   const [fetchErrors, setFetchErrors] = useState<(string | null)[]>(() =>
     new Array(count).fill(null)
   );
-  // -1 = "汇总" tab (cross-question summary); 0..n = individual question
+  // -1 = "汇总" tab (cross-question summary); 0..n = individual question.
+  // C · first-result priority: default to Q1, not 汇总 — Q1's feedback returns
+  // first (~24s), so the user sees real content fast instead of waiting for all
+  // 3 to finish before 汇总 has anything to show. 汇总 stays one click away.
   const SUMMARY_IDX = -1;
-  const [selectedIdx, setSelectedIdx] = useState<number>(
-    isDemo || count === 1 ? 0 : SUMMARY_IDX
-  );
+  const [selectedIdx, setSelectedIdx] = useState<number>(0);
 
   const fetchOne = async (i: number) => {
     setLoadingStates((prev) => {
@@ -390,6 +437,9 @@ export default function FeedbackStep({ onRestart }: Props) {
       : null
     : fetchErrors[selectedIdx];
   const hasError = !isLoading && !!fetchError && !currentFeedback;
+
+  // Real progress for the loading panel — reflects how many threads have returned.
+  const doneCount = feedbacks.filter((f) => !!f).length;
 
   const radarDims = useMemo(
     () => (!isLoading && currentFeedback ? feedbackToRadarDims(currentFeedback.dimensions) : []),
@@ -671,6 +721,8 @@ export default function FeedbackStep({ onRestart }: Props) {
       <div className="grid grid-cols-1 lg:grid-cols-[25fr_45fr_30fr] gap-6 lg:h-[640px]">
         {hasError ? (
           <ErrorCard message={fetchError!} onRetry={handleRetry} />
+        ) : isLoading ? (
+          <EvaluatingPanel doneCount={doneCount} total={count} />
         ) : (
           <>
             {/* Column A · Text feedback (优点 / 改进 / 思考节奏) — internal scroll if overflowing */}

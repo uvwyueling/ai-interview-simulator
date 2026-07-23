@@ -13,6 +13,7 @@ import { getAnonId, getSessionId } from "./identity";
 export const EVENTS = {
   LANDED: "landed", // page loaded at the URL (top of funnel)
   APP_VIEWED: "app_viewed", // upload UI actually rendered (i.e. past any invite wall)
+  FIRST_INTERACTION: "first_interaction", // first real user gesture → "this is a human"
   INPUT_COMPLETED: "input_completed",
   QUESTIONS_GENERATED: "questions_generated",
   INTERVIEW_STARTED: "interview_started",
@@ -115,10 +116,12 @@ export function trackLanded(): void {
   } catch {
     /* ignore */
   }
-  // src is auto-injected by track(); viewport_width/referrer live only on `landed`.
+  // src is auto-injected by track(); these live only on `landed`.
+  // `webdriver` is a cheap bot signal (true under most automation tooling).
   track(EVENTS.LANDED, {
     viewport_width: window.innerWidth,
     referrer: document.referrer || "",
+    webdriver: navigator.webdriver === true,
   });
 }
 
@@ -132,4 +135,25 @@ export function trackAppViewed(): void {
     /* ignore — fall through and still fire once for this render */
   }
   track(EVENTS.APP_VIEWED);
+}
+
+// The strongest "this is a real human" signal: any genuine user gesture. Headless
+// bots/crawlers usually never produce one. Fires once per visit (survives refresh).
+// Used as the funnel-denoise filter (a session with no first_interaction ≈ bot).
+const FIRST_INTERACTION_KEY = "echo_first_interaction";
+let firstInteractionFired = false;
+
+export function trackFirstInteraction(): void {
+  if (typeof window === "undefined" || firstInteractionFired) return;
+  try {
+    if (sessionStorage.getItem(FIRST_INTERACTION_KEY)) {
+      firstInteractionFired = true;
+      return;
+    }
+    sessionStorage.setItem(FIRST_INTERACTION_KEY, "1");
+  } catch {
+    /* private mode — module flag still guards within this load */
+  }
+  firstInteractionFired = true;
+  track(EVENTS.FIRST_INTERACTION);
 }

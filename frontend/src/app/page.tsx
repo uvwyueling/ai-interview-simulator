@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { InterviewProvider, useInterview } from "@/context/InterviewContext";
-import { trackLanded } from "@/lib/analytics";
+import { trackLanded, trackFirstInteraction } from "@/lib/analytics";
 import Header from "@/components/Header";
 import InputStep from "@/components/InputStep";
 import InterviewStep from "@/components/InterviewStep";
@@ -73,9 +73,24 @@ const STEP_KEYS = ["input", "interview", "feedback"] as const;
 function AppContent() {
   const { step, questions, reset, jumpToStep, startInterview } = useInterview();
 
-  // Top of the funnel: record the landing once per page load.
+  // Top of the funnel: record the landing, then wait for the first real gesture
+  // (human signal). Listeners self-remove after the first fire.
   useEffect(() => {
     trackLanded();
+    const onInteract = () => {
+      trackFirstInteraction();
+      window.removeEventListener("pointerdown", onInteract);
+      window.removeEventListener("keydown", onInteract);
+      window.removeEventListener("touchstart", onInteract);
+    };
+    window.addEventListener("pointerdown", onInteract, { passive: true });
+    window.addEventListener("keydown", onInteract);
+    window.addEventListener("touchstart", onInteract, { passive: true });
+    return () => {
+      window.removeEventListener("pointerdown", onInteract);
+      window.removeEventListener("keydown", onInteract);
+      window.removeEventListener("touchstart", onInteract);
+    };
   }, []);
 
   const handleDemoJump = (s: (typeof STEP_KEYS)[number]) => {

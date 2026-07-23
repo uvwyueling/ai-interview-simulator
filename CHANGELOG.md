@@ -6,6 +6,24 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.11.0] — 2026-07-23
+
+### Added
+- **E · Human/bot signal (no invite wall)** — instead of gating access, sessions are now tagged so bots can be filtered in Supabase:
+  - New `first_interaction` event — fires once per visit on the first real gesture (`pointerdown` / `keydown` / `touchstart`). A session with `landed` but no `first_interaction` ≈ a bot/crawler. This is also the funnel-denoise signal I (replaces the previously-planned `first_recording_started`, which was later/stricter)
+  - `landed` now carries `webdriver: navigator.webdriver` (cheap automation signal)
+
+### Changed
+- **C · Feedback wait no longer a dead stare** (perceived-speed fix for the ~24s/question v4-pro generation; no backend change):
+  - **First-result priority** — the feedback page now defaults to the **Q1 tab** instead of 汇总. Q1 returns first (~24s), so the user sees real content fast; 汇总 (which needs all 3) stays one click away
+  - **Live progress panel** — the static skeleton during generation is replaced by an `EvaluatingPanel`: a spinner + rotating stage text ("正在评估五个能力维度…" etc.) + an honest estimate ("每题约需 20–30 秒") + a REAL progress bar (`doneCount/total`, since the 3 calls return staggered)
+  - Real streaming was deliberately rejected: feedback is a single Zod-validated JSON, so a half-streamed object can't be shown or validated — progress + first-result priority deliver the perceived-speed win without that complexity
+
+### Notes
+- Verified: build passes; input page boots clean (E's global listeners don't break page load). Deeper visual verification (the loading panel mid-generation; first_interaction firing on click) not done this run — Preview tooling unavailable here and it would need a real interview / real gesture. Changes are low-risk (C is presentational + a trivial `isLoading` branch; E mirrors the working `app_viewed`). Confirm in the next real run
+
+---
+
 ## [0.10.0] — 2026-06-11
 
 ### Changed

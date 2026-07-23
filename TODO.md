@@ -11,11 +11,11 @@
   - **LLM 三个决策全部在追问 prompt 里**（不加新路由、不改状态机）：① 上轮 <30 → **倾向继续追问**（2a：给"接得住"的机会）；② 下一问的题干**主动降级**——语气考察→引导、换更具体好接的角度、题干里给 1–2 个方向作脚手架；③ 硬上限每主题 3 次追问不变
   - **自校准埋点**：`followup_triggered` props 加 `wasSoftened: boolean`（前端按同一条件 `lastAnswerLen<30` 判断，与 LLM 侧同源）；不新增事件
   - **文件**：`api/generate-followup/route.ts`（Zod 加 `lastAnswerLen: number.optional()`；SYSTEM_PROMPT 嵌软化规则；lastAnswerLen 进 userMessage）+ `InterviewStep.tsx`（`runFollowUpJudgment` 算 lastAnswerLen 并进 fetch body）
-- [ ] **C · 反馈生成 25s 干等** —— 实测 23.7/27.5/26.5s，现状仅骨架屏。发帖前必做：流式输出 / 进度提示 / 先给部分结果（三选一或组合）
-- [ ] **E · 邀请墙：冷启动拆不拆** —— ⚠️ 代码目前**没有邀请墙**（"拆"不成立，真问题是"建不建"）。**发帖前必须做决定**：开放 vs 建墙（张力＝跑通漏斗拿数据 vs 控成本/防刷）。Claude 已给精简 pro/con，待用户拍板
+- [x] **C · 反馈生成 25s 干等** ✅ 已实现（v0.11.0）—— 决策：**②进度提示 + ③首份优先**（不做真流式，因反馈是需完整校验的 JSON）。反馈页默认落 Q1 Tab（~24s 先出内容，汇总一键可达）；生成中骨架屏换成 EvaluatingPanel（转圈 + 轮换阶段文案 + 诚实预期"每题约 20–30 秒" + 真实 doneCount/total 进度条）。零后端改动
+- [x] **E · 不建墙，改打真人/机器人标记** ✅ 已实现（v0.11.0）—— 决策：邀请墙劝退新用户，不建；改为埋点区分真假访问。新增 `first_interaction` 事件（首次真实手势触发一次）＝真人黄金信号；`landed` 加 `webdriver` 字段。Supabase 里 `有 landed 无 first_interaction ≈ 机器人`
 
 ### 🟡 重要（发帖前后）
-- [ ] **D · "开口说话"埋点** —— 现有 14 事件无此盲区。新增 `mic_permission_granted` / `first_recording_started`，捕捉 interview_started 之后、首条 answer_submitted 之前（开麦瞬间）的流失。**是 I 的前置依赖**
+- [ ] **D · "开口说话"埋点** —— 新增 `mic_permission_granted`，捕捉 interview_started 之后、首条 answer_submitted 之前（麦克风授权）的流失。（原 `first_recording_started` 已取消——I 的真人信号改用更早、更普适的 `first_interaction`，v0.11.0 已落地）
 - [x] **F · 题库/生成器岗位通用性** ✅ 已实现（v0.10.0，含品牌营销 persona 真实 API 验证）—— **② 全改 + ① 轻改，不对称处理**（不做双 persona demo）。理由：生成器出戏＝反馈时刻的信任摧毁+公开差评（最贵）；demo 出戏＝零投入的首印象流失（便宜，已有"仅供预览"横幅缓冲）。
   - **② 全改（约 1–2h）· 面试官人设与出题/评分改为岗位自适应**（技术偏向贯穿 4 处，需一并改）：
     - `generate-questions` SYSTEM_PROMPT：「资深**技术**面试官」→「资深面试官（按 JD 判断岗位方向）」；删掉硬编码「第 2 题：系统设计或技术深度」，改为「按该岗位核心能力出题」。**三个 prompt 都加兜底**：如无法从 JD 判断岗位方向，就按通用面试官路线出题，避免技术假设
@@ -27,10 +27,11 @@
     - 位置：InterviewStep 的示例数据横幅处（demo 模式）
   - **暂不做**：双 persona demo（技术+非技术两套示例）——投入产出比低，待内测数据显示 demo 路径流失严重再议
 - [ ] **G · 发帖前验证流程** —— 无痕浏览器走 landed→app_viewed→input_completed；手机真机点 xhs 那条链接；回 Supabase 确认 src 正确入库（与 v0.9.2 待验证项重合）
+  - [ ] ⚠️ **亲自测反馈页加载优化（v0.11.0，本次未做可视验证）**：完整跑一次真面试到反馈页，确认 ① 默认落在 Q1 Tab（非汇总）② 生成中显示 EvaluatingPanel（转圈+阶段文案+"每题约 20–30 秒"+真实进度条）③ Q1 约 24s 先出内容、汇总一键可达。顺带确认点击后 Supabase 多出一条 `first_interaction`
 - [ ] **H · 推广文案预期管理** —— 文案写明"准备 30–40 分钟、找个能出声的地方"（净面试约 26 分钟）。降跳出 + 对应 ab51ebf5 首次失败原因（开麦环境没准备好）
 
 ### 🟢 分析纪律（非代码待办，写 SQL 时的习惯）
-- [ ] **I · 漏斗去噪口径** —— 所有漏斗数字先排除"无真实互动"的会话；真实互动信号＝ `first_recording_started`（决策已定，依赖 D 先落地）。否则每天 2–5 个机器人底噪永久污染转化率
+- [ ] **I · 漏斗去噪口径** —— 所有漏斗数字先排除"无真实互动"的会话；真实互动信号＝ `first_interaction`（v0.11.0 已埋，无需再等 D）。典型过滤：`有 landed 无 first_interaction`（且 `webdriver=true`）= 机器人，从转化率分母剔除
 
 ## 🚀 内测前清单（Pre-Beta）— 当前焦点
 > 资深 PM 判断（2026-06-09）：核心闭环稳固、已上线、有数据闭环、移动端可用、隐私表述诚实——
