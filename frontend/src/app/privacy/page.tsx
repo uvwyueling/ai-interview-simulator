@@ -38,7 +38,7 @@ export default function PrivacyPage() {
         <Section title="我们如何使用你的简历与 JD">
           <p>
             你上传的简历和岗位 JD，仅用于<span className="font-medium text-slate-800">本次面试题目与反馈的生成</span>：
-            它们会被发送给 AI 模型服务商（Anthropic Claude）以生成内容，
+            它们会被发送给 AI 模型服务商（DeepSeek）以生成内容，
             <span className="font-medium text-slate-800">我们不会存储简历 / JD 原文</span>，
             也不会将其用于模型训练。
           </p>
@@ -82,14 +82,14 @@ export default function PrivacyPage() {
 
         <Section title="第三方服务">
           <p>
-            · <span className="font-medium text-slate-800">Anthropic（Claude API）</span>：生成面试题与反馈。<br />
+            · <span className="font-medium text-slate-800">DeepSeek API</span>：生成面试题与反馈。<br />
             · <span className="font-medium text-slate-800">Supabase</span>：保存匿名使用统计。<br />
             · <span className="font-medium text-slate-800">Vercel</span>：应用托管。
           </p>
         </Section>
 
         <p className="text-[12px] text-slate-400 mt-10 pt-6 border-t border-slate-200">
-          本产品处于实验 / 内测阶段，功能与本说明可能随时调整。如有疑问，请联系产品负责人。
+          本产品处于实验 / 内测阶段，功能与本说明可能随时调整。如有疑问，请联系产品负责人(uvwyueling@126.com)
         </p>
       </div>
     </div>
