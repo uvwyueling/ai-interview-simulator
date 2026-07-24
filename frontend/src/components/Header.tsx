@@ -5,18 +5,10 @@ function Logo() {
     <div className="flex items-center gap-2.5">
       <div className="relative w-8 h-8 rounded-lg bg-indigo-600 grid place-items-center ring-soft">
         <div className="absolute inset-0.5 rounded-md bg-gradient-to-br from-indigo-500 to-indigo-700"></div>
-        <svg
-          viewBox="0 0 24 24"
-          className="relative w-4 h-4 text-white"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.4"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <path d="M12 3a4 4 0 0 0-4 4v5a4 4 0 0 0 8 0V7a4 4 0 0 0-4-4z" />
-          <path d="M5 11a7 7 0 0 0 14 0" />
-          <path d="M12 18v3" />
+        <svg viewBox="0 0 48 48" className="relative w-4 h-4 text-white" fill="none">
+          <rect x="19" y="8" width="10" height="19" rx="5" fill="currentColor"/>
+          <path d="M13 22a11 11 0 0 0 22 0" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round"/>
+          <path d="M24 33v6" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round"/>
         </svg>
       </div>
       <div className="leading-tight">
