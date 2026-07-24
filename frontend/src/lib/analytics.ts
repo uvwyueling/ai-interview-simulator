@@ -28,6 +28,10 @@ export const EVENTS = {
   FEEDBACK_GENERATED: "feedback_generated", // success + latency (counterpart to _failed)
   FEEDBACK_FAILED: "feedback_failed",
   FEEDBACK_RATED: "feedback_rated", // 👍/👎 on feedback quality or follow-up usefulness
+  DOWNVOTE_REASON_SUBMITTED: "downvote_reason_submitted", // the cheapest qualitative data — captured at peak-emotion
+  CONTACT_CTA_SHOWN: "contact_cta_shown", // "let's chat" block entered viewport
+  CONTACT_CTA_CLICKED: "contact_cta_clicked", // user focused / opened the input (intent)
+  CONTACT_SUBMITTED: "contact_submitted", // wechat / email / xhs actually submitted
   REPORT_EXPORTED: "report_exported",
 } as const;
 
@@ -63,6 +67,21 @@ function getSource(): string {
   }
 }
 
+/**
+ * IANA timezone from the browser (e.g. "Asia/Shanghai", "America/New_York").
+ * Auto-injected into every event → answers "these visitors, where are they?"
+ * without doing geo-IP. Falls back to "" on ancient browsers where Intl is
+ * unavailable, so analytics keeps flowing.
+ */
+function getTz(): string {
+  if (typeof Intl === "undefined") return "";
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+  } catch {
+    return "";
+  }
+}
+
 /** ms since the visit's first landing, computed at call time (no running timer). */
 function timeSinceLanded(): number | undefined {
   if (typeof window === "undefined") return undefined;
@@ -84,6 +103,7 @@ export function track(event: EventName, props: Record<string, unknown> = {}): vo
         ...props,
         env: APP_ENV,
         src: getSource(),
+        tz: getTz(),
         ...(tsl !== undefined ? { time_since_landed_ms: tsl } : {}),
       },
       anonId: getAnonId(),

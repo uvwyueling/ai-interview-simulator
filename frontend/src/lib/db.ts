@@ -53,6 +53,33 @@ export async function insertEvent(row: AnalyticsEventRow): Promise<boolean> {
   return true;
 }
 
+// ── User-submitted free-text (contact info / downvote reasons) ───────────────
+// Kept in a separate table from `events` so PII never mixes into analytics.
+// One row per submission. Join on session_id / anon_id when you need the
+// submitter's full funnel path.
+
+export type FeedbackSubmissionRow = {
+  session_id: string;
+  anon_id: string;
+  kind: "contact" | "downvote_reason";
+  contact: string | null;       // wechat / email / xhs — only for kind='contact'
+  message: string | null;       // optional note (contact) or the reason text (downvote)
+  context: Record<string, unknown>; // e.g. { target, index, followupDepth } for downvote
+  tz: string | null;            // IANA tz from Intl.DateTimeFormat().resolvedOptions()
+};
+
+/** Insert one PII submission. Returns true on success, false on any failure. */
+export async function insertSubmission(row: FeedbackSubmissionRow): Promise<boolean> {
+  const client = getClient();
+  if (!client) return false;
+  const { error } = await client.from("feedback_submissions").insert(row);
+  if (error) {
+    console.error("[db] insertSubmission failed:", error.message);
+    return false;
+  }
+  return true;
+}
+
 /** Aggregate event counts grouped by event name (for dev verification). */
 export async function eventCounts(): Promise<Record<string, number> | null> {
   const client = getClient();

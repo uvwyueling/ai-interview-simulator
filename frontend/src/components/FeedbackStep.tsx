@@ -3,12 +3,14 @@
 import { useState, useEffect, useMemo } from "react";
 import RadarChart from "./RadarChart";
 import FeedbackCard from "./FeedbackCard";
+import ContactCTA from "./ContactCTA";
 import type { Feedback, FeedbackDimensions, DimensionDetails } from "@/types/interview";
 import { feedbackToRadarDims, DIMENSION_LABELS } from "@/types/interview";
 import { useInterview } from "@/context/InterviewContext";
 import { generateReportHTML } from "@/lib/generateReport";
 import { track, EVENTS } from "@/lib/analytics";
 import { fetchWithTimeout, isTimeoutError } from "@/lib/fetchWithTimeout";
+import { getAnonId, getSessionId } from "@/lib/identity";
 
 const MOCK_FEEDBACK: Feedback = {
   overallScore: 80,
@@ -259,6 +261,102 @@ function RatingButtons({
   );
 }
 
+// Cheapest qualitative data — the moment right after a 👎 is when the user's
+// frustration is most articulate. Shown ONLY after a downvote, always optional,
+// dismissable. Text goes to feedback_submissions (never into the events table).
+function DownvoteReasonPanel({
+  ratingKey,
+  context,
+  onDone,
+}: {
+  ratingKey: string;
+  context: Record<string, unknown>;
+  onDone: () => void;
+}) {
+  const [text, setText] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async () => {
+    const trimmed = text.trim();
+    if (!trimmed || submitting) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/contact", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kind: "downvote_reason",
+          message: trimmed.slice(0, 2000),
+          context: { ratingKey, ...context },
+          tz:
+            typeof Intl !== "undefined"
+              ? (() => {
+                  try {
+                    return Intl.DateTimeFormat().resolvedOptions().timeZone;
+                  } catch {
+                    return "";
+                  }
+                })()
+              : "",
+          anonId: getAnonId(),
+          sessionId: getSessionId(),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) throw new Error(data.error || "提交失败");
+      track(EVENTS.DOWNVOTE_REASON_SUBMITTED, {
+        ...context,
+        ratingKey,
+        reasonLen: trimmed.length,
+      });
+      onDone();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "提交失败");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="mt-3 rounded-lg bg-white ring-1 ring-rose-200 p-3">
+      <div className="text-[12px] text-slate-600 mb-2">
+        方便说说哪里不好吗？（可选，只我一个人看得到）
+      </div>
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value.slice(0, 2000))}
+        rows={2}
+        placeholder="比如：反馈太笼统 / 追问没有意义 / 评分和实际差得远…"
+        className="w-full px-3 py-2 text-[13px] rounded-md bg-slate-50 ring-1 ring-slate-200 focus:ring-2 focus:ring-rose-400 focus:outline-none transition placeholder:text-slate-400 resize-none"
+        disabled={submitting}
+      />
+      {error && <div className="text-[12px] text-rose-600 mt-1.5">{error}</div>}
+      <div className="flex items-center justify-end gap-2 mt-2">
+        <button
+          onClick={onDone}
+          disabled={submitting}
+          className="text-[12px] text-slate-500 hover:text-slate-700 px-3 py-1.5 rounded-md transition"
+        >
+          跳过
+        </button>
+        <button
+          onClick={submit}
+          disabled={submitting || text.trim().length === 0}
+          className={`text-[12px] font-medium px-3 py-1.5 rounded-md transition ${
+            submitting || text.trim().length === 0
+              ? "bg-slate-200 text-slate-400 cursor-not-allowed"
+              : "bg-rose-500 text-white hover:bg-rose-600"
+          }`}
+        >
+          {submitting ? "提交中…" : "提交"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 type Props = {
   onRestart: () => void;
 };
@@ -454,9 +552,16 @@ export default function FeedbackStep({ onRestart }: Props) {
     !isDemo && !isSummary ? completedThreads[selectedIdx] : null;
   const exchangeCount = selectedThread ? selectedThread.exchanges.length : 0;
 
+  // Which downvote reason panels are currently expanded, and which have been
+  // resolved (submitted / dismissed) this session so we don't re-open them.
+  // In-memory (not persisted) — after a refresh the -1 rating stays but the
+  // panel doesn't re-appear unless the user re-clicks 👎.
+  const [openReasonKeys, setOpenReasonKeys] = useState<Set<string>>(new Set());
+  const [reasonDoneKeys, setReasonDoneKeys] = useState<Set<string>>(new Set());
+
   // Record a 👍/👎 and fire the analytics event — but only when the value actually
   // changes, so refresh (restored ratings) and re-clicking the same choice don't
-  // double-count.
+  // double-count. A newly-cast 👎 also opens the reason panel exactly once.
   const rate = (
     key: string,
     value: 1 | -1,
@@ -465,6 +570,26 @@ export default function FeedbackStep({ onRestart }: Props) {
     if (ratings[key] === value) return;
     setRating(key, value);
     track(EVENTS.FEEDBACK_RATED, { ...payload, usefulness: value, isDemo });
+    if (value === -1 && !reasonDoneKeys.has(key)) {
+      setOpenReasonKeys((prev) => {
+        const n = new Set(prev);
+        n.add(key);
+        return n;
+      });
+    }
+  };
+
+  const closeReasonPanel = (key: string) => {
+    setOpenReasonKeys((prev) => {
+      const n = new Set(prev);
+      n.delete(key);
+      return n;
+    });
+    setReasonDoneKeys((prev) => {
+      const n = new Set(prev);
+      n.add(key);
+      return n;
+    });
   };
 
   // Retry handler — in summary mode, retry all failed; otherwise retry current
@@ -824,20 +949,35 @@ export default function FeedbackStep({ onRestart }: Props) {
       {!hasError && !isLoading && currentFeedback && (
         <div className="mt-6 space-y-3">
           {/* 反馈认可度 */}
-          <div className="flex items-center justify-between gap-4 rounded-xl bg-slate-50 ring-1 ring-slate-200 px-5 py-4">
-            <div className="text-[13px] text-slate-600">
-              {isSummary ? "这份综合反馈对你有帮助吗？" : "这份反馈对你有帮助吗？"}
-            </div>
-            <RatingButtons
-              value={ratings[isSummary ? "fb:summary" : `fb:${selectedIdx}`]}
-              onRate={(v) =>
-                rate(isSummary ? "fb:summary" : `fb:${selectedIdx}`, v, {
-                  target: "feedback",
-                  index: isSummary ? "summary" : selectedIdx,
-                })
-              }
-            />
-          </div>
+          {(() => {
+            const key = isSummary ? "fb:summary" : `fb:${selectedIdx}`;
+            const context = {
+              target: "feedback" as const,
+              index: isSummary ? "summary" : selectedIdx,
+            };
+            return (
+              <div className="rounded-xl bg-slate-50 ring-1 ring-slate-200 px-5 py-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="text-[13px] text-slate-600">
+                    {isSummary
+                      ? "这份综合反馈对你有帮助吗？"
+                      : "这份反馈对你有帮助吗？"}
+                  </div>
+                  <RatingButtons
+                    value={ratings[key]}
+                    onRate={(v) => rate(key, v, context)}
+                  />
+                </div>
+                {openReasonKeys.has(key) && (
+                  <DownvoteReasonPanel
+                    ratingKey={key}
+                    context={context}
+                    onDone={() => closeReasonPanel(key)}
+                  />
+                )}
+              </div>
+            );
+          })()}
 
           {/* 追问有用率 — only for an individual question that had follow-ups */}
           {!isSummary && selectedThread && selectedThread.exchanges.length > 1 && (
@@ -853,25 +993,30 @@ export default function FeedbackStep({ onRestart }: Props) {
                 {selectedThread.exchanges.slice(1).map((ex, j) => {
                   const depth = j + 1;
                   const key = `fu:${selectedIdx}:${depth}`;
+                  const context = {
+                    target: "followup" as const,
+                    index: selectedIdx,
+                    followupDepth: depth,
+                  };
                   return (
-                    <div
-                      key={key}
-                      className="flex items-center justify-between gap-4 py-1.5"
-                    >
-                      <div className="text-[12px] text-slate-500 leading-relaxed flex-1">
-                        <span className="text-amber-600 font-medium">追问 {depth}：</span>
-                        {ex.question.text}
+                    <div key={key} className="py-1.5">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="text-[12px] text-slate-500 leading-relaxed flex-1">
+                          <span className="text-amber-600 font-medium">追问 {depth}：</span>
+                          {ex.question.text}
+                        </div>
+                        <RatingButtons
+                          value={ratings[key]}
+                          onRate={(v) => rate(key, v, context)}
+                        />
                       </div>
-                      <RatingButtons
-                        value={ratings[key]}
-                        onRate={(v) =>
-                          rate(key, v, {
-                            target: "followup",
-                            index: selectedIdx,
-                            followupDepth: depth,
-                          })
-                        }
-                      />
+                      {openReasonKeys.has(key) && (
+                        <DownvoteReasonPanel
+                          ratingKey={key}
+                          context={context}
+                          onDone={() => closeReasonPanel(key)}
+                        />
+                      )}
                     </div>
                   );
                 })}
@@ -880,6 +1025,11 @@ export default function FeedbackStep({ onRestart }: Props) {
           )}
         </div>
       )}
+
+      {/* Contact CTA — shown only for real interviews (not demo).
+          The value is defensible qualitative signal from users engaged enough
+          to reach the feedback page; demo runs are just previews. */}
+      {!isDemo && <ContactCTA />}
 
       {/* Action row */}
       <div className="mt-8 flex flex-col sm:flex-row items-center justify-between gap-4 bg-gradient-to-r from-indigo-50 via-indigo-50/40 to-transparent rounded-2xl px-6 py-5 ring-1 ring-indigo-100">

@@ -38,6 +38,9 @@ type PersistedState = {
   // 👍/👎 ratings keyed by target (e.g. "fb:0", "fb:summary", "fu:0:1"). Persisted
   // so a refresh restores the user's choice and avoids double-counting.
   ratings: Record<string, number>;
+  // Whether the user has submitted the "let's chat" contact form this session.
+  // Persisted so a refresh doesn't re-show the CTA after they already replied.
+  contactSubmitted: boolean;
 };
 
 function readSession(): PersistedState | null {
@@ -83,6 +86,7 @@ type InterviewState = {
   feedbacks: (Feedback | null)[];  // per-thread feedback results (persisted)
   feedbackViewedTracked: boolean;  // whether feedback_viewed has fired this interview
   ratings: Record<string, number>; // 👍/👎 ratings keyed by target (persisted)
+  contactSubmitted: boolean;       // whether user submitted the contact CTA (persisted)
 };
 
 type InterviewActions = {
@@ -97,6 +101,8 @@ type InterviewActions = {
   markFeedbackViewed: () => void;
   /** Record a 👍/👎 rating under a key (1 = up, -1 = down). */
   setRating: (key: string, value: number) => void;
+  /** Mark the contact CTA as submitted so it's not re-shown after refresh. */
+  markContactSubmitted: () => void;
   /**
    * Finalise the current main question with the given exchanges, then
    * advance to the next main question or go to the feedback step.
@@ -125,6 +131,7 @@ export function InterviewProvider({ children }: { children: ReactNode }) {
   const [feedbacks, setFeedbacks] = useState<(Feedback | null)[]>([]);
   const [feedbackViewedTracked, setFeedbackViewedTracked] = useState(false);
   const [ratings, setRatings] = useState<Record<string, number>>({});
+  const [contactSubmitted, setContactSubmitted] = useState(false);
 
   // Tracks whether we have loaded from sessionStorage.
   // MUST be state, not a ref: under React StrictMode (dev) effects run twice —
@@ -150,13 +157,14 @@ export function InterviewProvider({ children }: { children: ReactNode }) {
       feedbacks,
       feedbackViewedTracked,
       ratings,
+      contactSubmitted,
     });
   }, [
     isHydrated,
     step, resume, jd, questions, isDemo,
     currentMainIndex, currentExchanges,
     pendingFollowUpQuestion, completedThreads,
-    feedbacks, feedbackViewedTracked, ratings,
+    feedbacks, feedbackViewedTracked, ratings, contactSubmitted,
   ]);
 
   // ── HYDRATE effect (declared second — runs after save on initial mount) ──────
@@ -175,6 +183,7 @@ export function InterviewProvider({ children }: { children: ReactNode }) {
       setFeedbacks(saved.feedbacks ?? []);
       setFeedbackViewedTracked(saved.feedbackViewedTracked ?? false);
       setRatings(saved.ratings ?? {});
+      setContactSubmitted(saved.contactSubmitted ?? false);
     }
     setIsHydrated(true);
   }, []); // runs exactly once on mount (twice under StrictMode — safe, see above)
@@ -192,6 +201,7 @@ export function InterviewProvider({ children }: { children: ReactNode }) {
     setFeedbacks([]);
     setFeedbackViewedTracked(false);
     setRatings({});
+    setContactSubmitted(false);
     setIsJudgingState(false);
     setPendingFollowUpState(null);
     setStep("interview");
@@ -218,6 +228,8 @@ export function InterviewProvider({ children }: { children: ReactNode }) {
 
   const setRating = (key: string, value: number) =>
     setRatings((prev) => ({ ...prev, [key]: value }));
+
+  const markContactSubmitted = () => setContactSubmitted(true);
 
   const advanceToNext = (finalExchanges: Exchange[]) => {
     const thread: QuestionThread = {
@@ -256,6 +268,7 @@ export function InterviewProvider({ children }: { children: ReactNode }) {
     setFeedbacks([]);
     setFeedbackViewedTracked(false);
     setRatings({});
+    setContactSubmitted(false);
     setIsJudgingState(false);
     setPendingFollowUpState(null);
   };
@@ -276,6 +289,7 @@ export function InterviewProvider({ children }: { children: ReactNode }) {
         feedbacks,
         feedbackViewedTracked,
         ratings,
+        contactSubmitted,
         startInterview,
         appendExchange,
         setIsJudging,
@@ -283,6 +297,7 @@ export function InterviewProvider({ children }: { children: ReactNode }) {
         setFeedbackAt,
         markFeedbackViewed,
         setRating,
+        markContactSubmitted,
         advanceToNext,
         jumpToStep,
         reset,

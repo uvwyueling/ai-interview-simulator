@@ -6,6 +6,27 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.12.0] — 2026-07-24
+
+### Added
+- **联系方式 CTA（反馈页底部）** —— 完成一次真实面试后（demo 模式不显示），底部出现一段可选表单：「这是我一个人做的 v0…我请你喝咖啡」+ 联系方式输入框 + 可选留言。零社群维护成本、筛出最愿意深聊的用户。已提交状态持久化（`contactSubmitted` 进 `InterviewContext`），刷新不重复出现
+  - `contact_cta_shown` —— 用 `IntersectionObserver`（threshold 0.4）真正进入视口才打，比一渲染就打准
+  - `contact_cta_clicked` —— 首次 focus 到任一输入框（意图信号）
+  - `contact_submitted` —— 成功入库（含 `hasContact` / `hasMessage` / `messageLen` 元数据）
+- **👎 差评原因输入框** —— 反馈认可度和追问有用率两处 `RatingButtons` 组件；点 👎 后就地展开可选 textarea（附「跳过」按钮）+ 提交，与 👎 打分本身解耦。这是最便宜的定性数据、抓在情绪最真实的时刻
+  - `downvote_reason_submitted` —— 携带 `ratingKey` + `target/index/followupDepth` + `reasonLen`
+- **时区自动注入** —— `track()` 每个事件自动带 `tz`（`Intl.DateTimeFormat().resolvedOptions().timeZone`），一处改动全事件受益。回答「这些人到底在哪」而无需 geo-IP、隐私友好；Intl 不可用时兜底为空串、不阻塞埋点
+- **`feedback_submissions` 单表 + `/api/contact` 路由** —— 联系方式与差评原因共用一张 PII 表、用 `kind` 字段区分。events 表继续保持「零原始文本」不变量；用 `session_id` 反查该用户完整行为路径。Zod 校验 + rateLimit(10/min) + 包装错误 + `insertSubmission()` 与 `insertEvent()` 同款优雅降级
+
+### Changed
+- Privacy 页新增一节「你主动填写的联系方式与反馈」——明确说明这两项完全可选、仅用于与用户个人沟通、不公开不转售不用于 AI 训练
+
+### Notes
+- ⚠️ **需要用户先在 Supabase 执行 SQL 建表**，否则 `/api/contact` 会走友好降级路径（返回 503 + 中文报错），前端表单能提交但看到「提交失败，请稍后再试」。SQL 见交付说明
+- Build 通过；本地 preview 验证：👎 展开原因框 ✓、`/api/contact` 路由被调用 ✓（返回预期的 503 + 友好错误，表未建符合优雅降级）、`tz` 出现在每个事件 props ✓（`Asia/Shanghai`）。ContactCTA 因隐藏于 demo 模式外，未做可视验证——代码路径与已验的评分/原因面板同构
+
+---
+
 ## [0.11.1] — 2026-07-23
 
 ### Added

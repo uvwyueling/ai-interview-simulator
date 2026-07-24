@@ -63,6 +63,17 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
+        <Section title="你主动填写的联系方式与反馈">
+          <p>
+            如果你在反馈页主动填写了<span className="font-medium text-slate-800">联系方式（微信 / 邮箱 / 小红书号）</span>
+            或对某条反馈写下的<span className="font-medium text-slate-800">差评原因</span>，
+            这些内容会与匿名会话 ID 一起保存到一张独立的表中，
+            仅用于我（产品负责人）与你个人沟通、改进本产品，
+            <span className="font-medium text-slate-800">不会公开、不会转售、也不会用于 AI 训练</span>。
+            这两项都是完全可选的——不填不影响任何功能。
+          </p>
+        </Section>
+
         <Section title="我们不做什么">
           <p>
             不需要注册账号 · 不存储简历原文 · 不录制音频 · 不将你的数据用于 AI 训练 · 不向第三方出售数据。

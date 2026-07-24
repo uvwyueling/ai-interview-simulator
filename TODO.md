@@ -1,5 +1,15 @@
 # 开发 TODO 清单
 
+## 🆕 v0.12.0（2026-07-24）·「联系方式 + 差评原因 + 时区」三件套 ✅
+> 用户提出：v0 阶段最便宜也最重要的三个定性/画像补齐。
+
+- [x] **反馈页底部联系方式 CTA**（仅真面试展示）——「我请你喝咖啡」文案 + 联系方式输入框 + 可选留言；`contact_cta_shown/clicked/submitted` 三事件；已提交状态持久化，刷新不重复
+- [x] **👎 就地展开原因输入框**（可选，附「跳过」）——反馈认可度 & 追问有用率两处评分都覆盖；`downvote_reason_submitted` 事件带 `ratingKey + target/index/followupDepth + reasonLen`
+- [x] **时区自动注入**——`track()` 里像 `src/env` 一样自动带 `tz`，一处改动全事件生效；Intl 不可用兜底为空串
+- [x] **`feedback_submissions` 单表 + `/api/contact`**——PII 与 events 表隔离；用 `session_id` 反查行为路径
+- [x] Privacy 页补充 PII 使用说明
+- [ ] ⚠️ **Supabase 建表 SQL**（用户侧待做）：v0.12.0 上线前必须在 SQL Editor 执行，否则表单能提交但看到「提交失败」
+
 ## 📣 发帖引流前清单（用户 2026-06-11 提出 · 已与代码比对）
 > 来源：用户手写清单 A–I。每条附 Claude 的实际代码核实结论。优先级沿用用户标注（🔴 发帖前必做 / 🟡 重要 / 🟢 分析纪律）。
 
