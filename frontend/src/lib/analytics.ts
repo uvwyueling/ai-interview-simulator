@@ -17,6 +17,9 @@ export const EVENTS = {
   INPUT_COMPLETED: "input_completed",
   QUESTIONS_GENERATED: "questions_generated",
   INTERVIEW_STARTED: "interview_started",
+  MIC_PROMPT_SHOWN: "mic_prompt_shown", // user clicked mic → about to call recognition.start()
+  MIC_PERMISSION_GRANTED: "mic_permission_granted", // onstart fired → browser actually listening
+  MIC_PERMISSION_DENIED: "mic_permission_denied", // onerror with not-allowed / service-not-allowed
   ANSWER_SUBMITTED: "answer_submitted",
   FOLLOWUP_TRIGGERED: "followup_triggered",
   FOLLOWUP_DEGRADED: "followup_degraded", // followup API failed → advanced without it

@@ -6,6 +6,23 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.11.1] — 2026-07-23
+
+### Added
+- **D · Mic-permission mini-funnel** (3 new events) — previously the whole "click mic → grant/deny → start speaking" segment was invisible; only the aftermath (`answer_submitted`) was tracked:
+  - `mic_prompt_shown` — user clicked mic, `recognition.start()` about to be called
+  - `mic_permission_granted` — the browser actually started listening (fired from `recognition.onstart` — the only reliable "granted" signal, since clicking the button ≠ granted while the popup is still up). Carries `latencyMs` = popup hesitation time
+  - `mic_permission_denied` — `onerror` with `error === "not-allowed"` or `"service-not-allowed"`, tagged with the specific reason. Fires every denial (not deduped) — repeated attempts are meaningful
+  - The "silent" leak (shown but no granted/denied — user closed the popup / bailed) shows up naturally as `mic_prompt_shown - granted - denied`
+
+### Fixed
+- **UX bug found in passing**: `recognition.onerror` used to blanket-say "语音识别出错，请重试" for any error — including permission denials, where the app is not "broken" and asking the user to retry the same denied action is unhelpful. Now permission-denial errors show an actionable copy pointing to the browser's address-bar lock icon, and suggest the keyboard fallback
+
+### Changed
+- `types/speech.d.ts`: added `onstart`, typed `onerror` with `SpeechRecognitionErrorEvent` (was `Event`) so the error code is available — required for the denial-vs-other split
+
+---
+
 ## [0.11.0] — 2026-07-23
 
 ### Added

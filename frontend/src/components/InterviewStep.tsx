@@ -149,6 +149,10 @@ export default function InterviewStep() {
   // Cumulative chars contributed by speech recognition (final results), used to
   // estimate how much the user edited the transcript: asrChars vs final length.
   const asrCharsRef = useRef(0);
+  // Timestamp when we called recognition.start() → onstart. Enables the
+  // mic_prompt_shown → mic_permission_granted latency ("how long did they
+  // hesitate on the browser's permission popup").
+  const micPromptAtRef = useRef<number | null>(null);
 
   // Derived question
   const mainQ = questions[currentMainIndex];
@@ -252,8 +256,37 @@ export default function InterviewStep() {
       setInterimTranscript(interimText);
     };
 
-    recognition.onerror = () => {
-      setSpeechError("语音识别出错，请重试");
+    // Fired when the browser has actually granted mic access and started
+    // listening — the ONLY reliable "permission granted" signal. Clicking
+    // the button ≠ granted; the user might still be looking at the popup.
+    recognition.onstart = () => {
+      const shownAt = micPromptAtRef.current;
+      track(EVENTS.MIC_PERMISSION_GRANTED, {
+        mainIndex: currentMainIndex,
+        depth: currentExchanges.length,
+        latencyMs: shownAt != null ? Date.now() - shownAt : undefined,
+      });
+      micPromptAtRef.current = null;
+    };
+
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      const err = event.error;
+      const denied = err === "not-allowed" || err === "service-not-allowed";
+      if (denied) {
+        track(EVENTS.MIC_PERMISSION_DENIED, {
+          mainIndex: currentMainIndex,
+          depth: currentExchanges.length,
+          reason: err,
+        });
+        // Actionable copy — the previous generic "识别出错，请重试" was misleading
+        // for permission denials (users would blame the app, not their choice).
+        setSpeechError(
+          "你还没允许浏览器访问麦克风。请点击地址栏左侧的锁形图标授权后重试，或改用键盘输入。"
+        );
+      } else {
+        setSpeechError("语音识别出错，请重试");
+      }
+      micPromptAtRef.current = null;
       setRecording(false);
     };
 
@@ -272,7 +305,18 @@ export default function InterviewStep() {
     if (!recording && thinkingTimeMsRef.current === 0) {
       thinkingTimeMsRef.current = Date.now() - questionStartRef.current;
     }
-    if (recording) setInterimTranscript("");
+    if (recording) {
+      setInterimTranscript("");
+    } else {
+      // About to call recognition.start() (via the effect on `recording`).
+      // Anchor the timestamp here so onstart can compute the popup-hesitation
+      // latency, and log the request itself so denials/silence are visible.
+      micPromptAtRef.current = Date.now();
+      track(EVENTS.MIC_PROMPT_SHOWN, {
+        mainIndex: currentMainIndex,
+        depth: currentExchanges.length,
+      });
+    }
     setRecording((r) => !r);
   };
 

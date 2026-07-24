@@ -15,7 +15,7 @@
 - [x] **E · 不建墙，改打真人/机器人标记** ✅ 已实现（v0.11.0）—— 决策：邀请墙劝退新用户，不建；改为埋点区分真假访问。新增 `first_interaction` 事件（首次真实手势触发一次）＝真人黄金信号；`landed` 加 `webdriver` 字段。Supabase 里 `有 landed 无 first_interaction ≈ 机器人`
 
 ### 🟡 重要（发帖前后）
-- [ ] **D · "开口说话"埋点** —— 新增 `mic_permission_granted`，捕捉 interview_started 之后、首条 answer_submitted 之前（麦克风授权）的流失。（原 `first_recording_started` 已取消——I 的真人信号改用更早、更普适的 `first_interaction`，v0.11.0 已落地）
+- [x] **D · "开口说话"埋点** ✅ 已实现（v0.11.1）—— 麦克风授权小漏斗：`mic_prompt_shown` → `mic_permission_granted`（onstart，带 latency）/ `mic_permission_denied`（onerror 分流 not-allowed，带 reason）。顺带修 UX bug：授权被拒时给可执行引导（"点地址栏锁形图标授权，或改用键盘"），不再误显"识别出错请重试"
 - [x] **F · 题库/生成器岗位通用性** ✅ 已实现（v0.10.0，含品牌营销 persona 真实 API 验证）—— **② 全改 + ① 轻改，不对称处理**（不做双 persona demo）。理由：生成器出戏＝反馈时刻的信任摧毁+公开差评（最贵）；demo 出戏＝零投入的首印象流失（便宜，已有"仅供预览"横幅缓冲）。
   - **② 全改（约 1–2h）· 面试官人设与出题/评分改为岗位自适应**（技术偏向贯穿 4 处，需一并改）：
     - `generate-questions` SYSTEM_PROMPT：「资深**技术**面试官」→「资深面试官（按 JD 判断岗位方向）」；删掉硬编码「第 2 题：系统设计或技术深度」，改为「按该岗位核心能力出题」。**三个 prompt 都加兜底**：如无法从 JD 判断岗位方向，就按通用面试官路线出题，避免技术假设
@@ -28,6 +28,7 @@
   - **暂不做**：双 persona demo（技术+非技术两套示例）——投入产出比低，待内测数据显示 demo 路径流失严重再议
 - [ ] **G · 发帖前验证流程** —— 无痕浏览器走 landed→app_viewed→input_completed；手机真机点 xhs 那条链接；回 Supabase 确认 src 正确入库（与 v0.9.2 待验证项重合）
   - [ ] ⚠️ **亲自测反馈页加载优化（v0.11.0，本次未做可视验证）**：完整跑一次真面试到反馈页，确认 ① 默认落在 Q1 Tab（非汇总）② 生成中显示 EvaluatingPanel（转圈+阶段文案+"每题约 20–30 秒"+真实进度条）③ Q1 约 24s 先出内容、汇总一键可达。顺带确认点击后 Supabase 多出一条 `first_interaction`
+  - [ ] ⚠️ **亲自测麦克风授权埋点（v0.11.1，需真实浏览器弹窗）**：面试页首次点麦克风时故意点"拒绝"→ 看错误提示是否为可执行引导（"点地址栏锁形图标授权…"）；再点一次麦克风、这次点"允许"→ 正常开始识别。Supabase 应能看到 `mic_prompt_shown / mic_permission_denied / mic_prompt_shown / mic_permission_granted` 依次出现
 - [ ] **H · 推广文案预期管理** —— 文案写明"准备 30–40 分钟、找个能出声的地方"（净面试约 26 分钟）。降跳出 + 对应 ab51ebf5 首次失败原因（开麦环境没准备好）
 
 ### 🟢 分析纪律（非代码待办，写 SQL 时的习惯）
