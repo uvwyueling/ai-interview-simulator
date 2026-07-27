@@ -140,8 +140,8 @@ export default function ContactCTA() {
           </svg>
         </div>
         <div className="text-[13px] leading-relaxed text-slate-700">
-          这是我一个人做的 v0。如果你愿意花 20 分钟跟我聊聊哪里不好用，留个联系方式（微信 / 邮箱 / 小红书号都行），
-          <span className="font-medium text-slate-900">我请你喝咖啡</span> ☕️
+          这是我一个人做的 v0，还在一版版改。你觉得哪里不好用，告诉我，下次你就能练得更顺。愿意聊 20 分钟吗？留个联系方式，
+          <span className="font-medium text-slate-900">我请你喝咖啡</span> ☕️（微信 / 邮箱 / 小红书号都行）
         </div>
       </div>
 
