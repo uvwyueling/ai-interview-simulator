@@ -1,5 +1,14 @@
 # 开发 TODO 清单
 
+## 🆕 v0.12.1（2026-07-25）· 麦克风录音核心 bug 修复 ✅
+> 来源：Supabase 数据发现单会话 `mic_permission_granted` 触发 74 次、循环上 asrChars 全空、granted 与 prompt_shown 同毫秒。根因：`InterviewStep.tsx` 语音识别 effect 缺 `onend` 自动重启 + `no-speech` 被当致命错误。
+
+- [x] **加 `onend` 静默自动重启**——Chrome 静音自停后无缝续听，用户无需再点；ref 身份校验防死循环、显式停止/切题不重启
+- [x] **`no-speech` / `aborted` 视为良性**——思考停顿不再打死录音、不再弹「识别出错」
+- [x] **埋点纠偏 `grantedFiredRef`**——`mic_permission_granted` 恢复每题 ≈1 次；新增 `mic_auto_restart` 观测事件
+- [x] **验证**：mock SpeechRecognition 驱动全生命周期断言通过（granted 不暴涨、no-speech 不停录、denied 不死循环）
+- [ ] ⚠️ **上线后回看 Supabase**：确认真实会话里 `mic_permission_granted` 回落到每题 ≈1 次、`answer_submitted.asrChars` 稳定有值、`mic_auto_restart` 频次在合理范围（顺带替换 v0.11.1 那条"待真机测麦克风授权埋点"的观察口径）
+
 ## 🆕 v0.12.0（2026-07-24）·「联系方式 + 差评原因 + 时区」三件套 ✅
 > 用户提出：v0 阶段最便宜也最重要的三个定性/画像补齐。
 

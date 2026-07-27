@@ -153,6 +153,13 @@ export default function InterviewStep() {
   // mic_prompt_shown → mic_permission_granted latency ("how long did they
   // hesitate on the browser's permission popup").
   const micPromptAtRef = useRef<number | null>(null);
+  // Chrome ends recognition on its own after a few seconds of silence (even with
+  // continuous=true). We silently restart it (see onend), which re-fires onstart.
+  // This guard makes mic_permission_granted fire ONCE per user-initiated recording
+  // (the real "granted" signal) instead of once per internal restart — otherwise a
+  // single answer inflates granted into the dozens. Reset on each fresh mic click
+  // and on question change.
+  const grantedFiredRef = useRef(false);
 
   // Derived question
   const mainQ = questions[currentMainIndex];
@@ -186,6 +193,7 @@ export default function InterviewStep() {
     questionStartRef.current = Date.now();
     thinkingTimeMsRef.current = 0;
     asrCharsRef.current = 0;
+    grantedFiredRef.current = false;
   }, [currentMainIndex]);
 
   // Also reset when a follow-up question arrives (pendingFollowUpQuestion becomes non-null)
@@ -198,6 +206,7 @@ export default function InterviewStep() {
       questionStartRef.current = Date.now();
       thinkingTimeMsRef.current = 0;
       asrCharsRef.current = 0;
+      grantedFiredRef.current = false;
     }
   }, [pendingFollowUpQuestion]);
 
@@ -257,9 +266,13 @@ export default function InterviewStep() {
     };
 
     // Fired when the browser has actually granted mic access and started
-    // listening — the ONLY reliable "permission granted" signal. Clicking
-    // the button ≠ granted; the user might still be looking at the popup.
+    // listening. onstart also fires on every INTERNAL restart (see onend), so
+    // guard with grantedFiredRef → mic_permission_granted counts real grants
+    // (≈1 per answer), not restarts. Clicking the button ≠ granted; the user
+    // might still be looking at the popup.
     recognition.onstart = () => {
+      if (grantedFiredRef.current) return; // internal restart → not a new grant
+      grantedFiredRef.current = true;
       const shownAt = micPromptAtRef.current;
       track(EVENTS.MIC_PERMISSION_GRANTED, {
         mainIndex: currentMainIndex,
@@ -269,8 +282,38 @@ export default function InterviewStep() {
       micPromptAtRef.current = null;
     };
 
+    // Chrome ends recognition on its own after a few seconds of silence, even
+    // with continuous=true. Without this, the mic UI stays "on" but nothing is
+    // captured and the user must re-click (the root cause of the granted-count
+    // blowup). Silently restart while the user still intends to record; the
+    // identity check skips restart after an explicit stop / question change.
+    recognition.onend = () => {
+      if (recognitionRef.current !== recognition) return; // stopped or superseded
+      track(EVENTS.MIC_AUTO_RESTART, {
+        mainIndex: currentMainIndex,
+        depth: currentExchanges.length,
+      });
+      try {
+        recognition.start();
+      } catch {
+        // start() can throw if called too eagerly — bail out cleanly rather than
+        // spin. recording=false triggers the cleanup below.
+        recognitionRef.current = null;
+        setRecording(false);
+      }
+    };
+
     recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
       const err = event.error;
+      // Benign, expected mid-recording: no-speech (a natural thinking pause) and
+      // aborted (fires from our own stop()). Do NOT kill the session or show an
+      // error — onend will keep listening. Previously these ended the recording
+      // and showed a scary "识别出错" prompt, forcing a manual restart.
+      if (err === "no-speech" || err === "aborted") return;
+
+      // Everything below is fatal: null the ref FIRST so onend won't restart,
+      // then stop cleanly.
+      recognitionRef.current = null;
       const denied = err === "not-allowed" || err === "service-not-allowed";
       if (denied) {
         track(EVENTS.MIC_PERMISSION_DENIED, {
@@ -294,6 +337,7 @@ export default function InterviewStep() {
     recognition.start();
 
     return () => {
+      // Null the ref BEFORE stop() so onend sees the mismatch and doesn't restart.
       recognitionRef.current = null;
       recognition.stop();
     };
@@ -311,6 +355,9 @@ export default function InterviewStep() {
       // About to call recognition.start() (via the effect on `recording`).
       // Anchor the timestamp here so onstart can compute the popup-hesitation
       // latency, and log the request itself so denials/silence are visible.
+      // Re-arm the granted guard so THIS genuine attempt fires granted once
+      // (internal onend-restarts won't); keeps prompt_shown:granted ≈ 1:1.
+      grantedFiredRef.current = false;
       micPromptAtRef.current = Date.now();
       track(EVENTS.MIC_PROMPT_SHOWN, {
         mainIndex: currentMainIndex,

@@ -20,6 +20,7 @@ export const EVENTS = {
   MIC_PROMPT_SHOWN: "mic_prompt_shown", // user clicked mic → about to call recognition.start()
   MIC_PERMISSION_GRANTED: "mic_permission_granted", // onstart fired → browser actually listening
   MIC_PERMISSION_DENIED: "mic_permission_denied", // onerror with not-allowed / service-not-allowed
+  MIC_AUTO_RESTART: "mic_auto_restart", // recognition ended on its own (Chrome silence-timeout) and we silently restarted it — measures how choppy the session was
   ANSWER_SUBMITTED: "answer_submitted",
   FOLLOWUP_TRIGGERED: "followup_triggered",
   FOLLOWUP_DEGRADED: "followup_degraded", // followup API failed → advanced without it

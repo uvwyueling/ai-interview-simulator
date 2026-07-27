@@ -6,6 +6,22 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.12.1] — 2026-07-25
+
+### Fixed
+- **麦克风"每答一题就重来"的核心录音 bug**（Supabase 数据发现：单会话 `mic_permission_granted` 触发 74 次、这些循环上 asrChars 全空、granted 与 prompt_shown 常同毫秒甚至顺序颠倒）。根因在 `InterviewStep.tsx` 的语音识别 effect：
+  - **缺 `onend` 自动重启** —— Chrome 的 Web Speech API 即便 `continuous=true`，静音几秒也会自行 `onend` 结束。原代码没有重启逻辑：识别悄悄停了，但 `recording` 状态仍为 true（计时器在跳、麦克风图标亮着），却一个字都录不进。用户被迫停→再点，每次重建 recognition → `onstart` 再触发一次 `granted`，堆到 74 次。**修复：新增 `onend` 静默自动重启**（用户仍想录音时无缝续听，不重新触发 `mic_prompt_shown`；显式停止/切题时靠 ref 身份校验跳过重启，不死循环）
+  - **`no-speech` 被当成致命错误** —— 原 `onerror` 里除权限拒绝外一律 `setRecording(false)` + 弹「语音识别出错，请重试」，而"开口前思考几秒"触发的 `no-speech` 也会走进这里，把录音打死。**修复：`no-speech` / `aborted` 视为良性、直接忽略**（交给 `onend` 续听），只有真错误才停并提示
+- **埋点纠偏：`mic_permission_granted` 恢复为每次答题 ≈ 1 次** —— 新增 `grantedFiredRef` 守门，只有用户手动开录的**首次** `onstart` 才发 `granted`，内部自动重启不再重复发。之前 granted 实为"recognition 重启次数"而非"授权次数"（Web Speech API 授权会被浏览器记住，不会每次重申请——这点与最初 getUserMedia 的猜测不同，但观察到的 UX 症状完全吻合）
+
+### Added
+- **`mic_auto_restart` 观测事件** —— `onend` 静默重启时触发一次，量化"Chrome 静音自停"在真实会话里有多频繁，用于验证修复效果、也作为后续录音健康度的护栏指标
+
+### Verified
+- Build 通过。在真实打包产物里注入 mock SpeechRecognition 驱动完整生命周期断言：点一次麦克风 → `prompt_shown`×1、`granted`×1（尽管 `onstart` 触发 2 次也不再暴涨）；两次 `onend` → 各续跑一次、发 `mic_auto_restart`×2、`start()` 共调用 3 次、`stop()` 0 次；`no-speech` → 不产生事件、不停止、录音存活；权限拒绝 → `denied`×1、拒绝后 `onend` 不重启（无死循环）、可操作引导正常显示
+
+---
+
 ## [0.12.0] — 2026-07-24
 
 ### Added
