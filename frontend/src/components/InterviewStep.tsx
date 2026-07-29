@@ -7,6 +7,10 @@ import { track, EVENTS } from "@/lib/analytics";
 import { fetchWithTimeout, isTimeoutError } from "@/lib/fetchWithTimeout";
 
 const MAX_FOLLOWUPS = 3;
+// Consecutive `network` errors (no successful transcript in between) tolerated
+// before we stop auto-restarting and surface an actionable error. Sized to ride
+// out transient drops while still bailing on a genuinely dead connection.
+const MAX_NETWORK_RETRIES = 5;
 
 // ── Animated wave bars ─────────────────────────────────────────────────────
 
@@ -160,6 +164,12 @@ export default function InterviewStep() {
   // single answer inflates granted into the dozens. Reset on each fresh mic click
   // and on question change.
   const grantedFiredRef = useRef(false);
+  // Web Speech (zh-CN) streams audio to Google's servers; on flaky / China
+  // connections it drops with a `network` error every ~1-3 min, then reconnects.
+  // We auto-restart on network (transient), but cap CONSECUTIVE failures with no
+  // successful transcript in between so a truly-down connection surfaces an
+  // actionable error instead of looping. Reset on new transcript / fresh click.
+  const networkRetryRef = useRef(0);
 
   // Derived question
   const mainQ = questions[currentMainIndex];
@@ -194,6 +204,7 @@ export default function InterviewStep() {
     thinkingTimeMsRef.current = 0;
     asrCharsRef.current = 0;
     grantedFiredRef.current = false;
+    networkRetryRef.current = 0;
   }, [currentMainIndex]);
 
   // Also reset when a follow-up question arrives (pendingFollowUpQuestion becomes non-null)
@@ -207,6 +218,7 @@ export default function InterviewStep() {
       thinkingTimeMsRef.current = 0;
       asrCharsRef.current = 0;
       grantedFiredRef.current = false;
+      networkRetryRef.current = 0;
     }
   }, [pendingFollowUpQuestion]);
 
@@ -261,6 +273,8 @@ export default function InterviewStep() {
       if (finalText) {
         setTranscript((prev) => prev + finalText);
         asrCharsRef.current += finalText.replace(/\s/g, "").length;
+        // Progress = the connection is (again) healthy → clear the network streak.
+        networkRetryRef.current = 0;
       }
       setInterimTranscript(interimText);
     };
@@ -305,16 +319,50 @@ export default function InterviewStep() {
 
     recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
       const err = event.error;
-      // Benign, expected mid-recording: no-speech (a natural thinking pause) and
-      // aborted (fires from our own stop()). Do NOT kill the session or show an
-      // error — onend will keep listening. Previously these ended the recording
-      // and showed a scary "识别出错" prompt, forcing a manual restart.
-      if (err === "no-speech" || err === "aborted") return;
+      // `aborted` fires from our own stop()/teardown — pure self-noise, ignore.
+      if (err === "aborted") return;
 
-      // Everything below is fatal: null the ref FIRST so onend won't restart,
-      // then stop cleanly.
-      recognitionRef.current = null;
       const denied = err === "not-allowed" || err === "service-not-allowed";
+      // `no-speech` = a natural thinking pause; `network` = Web Speech lost its
+      // connection to Google's servers (dominant on China/flaky links — the newly
+      // diagnosed cause of the ~10-clicks-per-answer churn). Both are transient:
+      // do NOT kill the session, let onend auto-restart. Cap consecutive network
+      // failures (no transcript in between) so a truly-dead link surfaces an error
+      // instead of looping forever.
+      const recoverable = err === "no-speech" || err === "network";
+
+      // Visibility fix: log every error reason (except aborted noise, and denials
+      // which have their own event) so we stop flying blind on what kills recording.
+      if (!denied) {
+        track(EVENTS.MIC_RECOGNITION_ERROR, {
+          mainIndex: currentMainIndex,
+          depth: currentExchanges.length,
+          reason: err,
+          recovered: recoverable,
+        });
+      }
+
+      if (recoverable) {
+        if (err === "network") {
+          networkRetryRef.current += 1;
+          if (networkRetryRef.current > MAX_NETWORK_RETRIES) {
+            // Sustained failure — stop looping and tell the user something useful.
+            recognitionRef.current = null;
+            micPromptAtRef.current = null;
+            setSpeechError(
+              "网络不稳定导致语音识别中断，请检查网络后重试，或改用键盘输入。"
+            );
+            setRecording(false);
+            return;
+          }
+        }
+        // Keep the ref intact → onend (fires right after) auto-restarts silently.
+        return;
+      }
+
+      // Fatal (denied / audio-capture / …): null the ref FIRST so onend won't
+      // restart, then stop cleanly.
+      recognitionRef.current = null;
       if (denied) {
         track(EVENTS.MIC_PERMISSION_DENIED, {
           mainIndex: currentMainIndex,
@@ -358,6 +406,7 @@ export default function InterviewStep() {
       // Re-arm the granted guard so THIS genuine attempt fires granted once
       // (internal onend-restarts won't); keeps prompt_shown:granted ≈ 1:1.
       grantedFiredRef.current = false;
+      networkRetryRef.current = 0; // fresh attempt → clear any prior network streak
       micPromptAtRef.current = Date.now();
       track(EVENTS.MIC_PROMPT_SHOWN, {
         mainIndex: currentMainIndex,

@@ -6,6 +6,26 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.12.2] — 2026-07-29
+
+### Fixed
+- **麦克风churn 的"第二个洞"：`network` 错误被当致命错误**（v0.12.1 修好了 granted 暴涨 + no-speech，但 7/27–7/28 埋点显示问题仍在——单会话 `mic_prompt_shown` 达 76/101，对 answer_submitted 约 7–10，即**每题手动点麦克风 ~10 次**；且 `mic_auto_restart` ≈ 0、`granted:prompt` 已回正为 1:1）。定位：Chrome 的 Web Speech（`zh-CN`）把音频流到 Google 服务器，国内/弱网下每 1–3 分钟丢一次 `network` 错误再重连；原 `onerror` 把 `network` 当致命 → `setRecording(false)` + 弹「识别出错」→ 用户被迫重点。佐证：这些会话 `asrChars ≈ answerLen`（848/848、652/652）说明麦克风与转写本身正常，只是连接反复瞬断。
+  - **`network` 改为可自愈** —— 不再当致命，保留 recognition ref 让 `onend` 静默自动重启（发 `mic_auto_restart`），瞬断自动续上、用户无感、无需重点
+  - **加连续失败上限 `MAX_NETWORK_RETRIES=5`** —— 连续 5 次 `network` 且期间无成功转写才判定"连接真的断了"，停止重启并弹可操作提示「网络不稳定导致语音识别中断，请检查网络后重试，或改用键盘输入」，避免网络全断时死循环。成功转写（`onresult` 出字）会清零计数，纯瞬断不会累积触顶
+
+### Added
+- **`mic_recognition_error` 观测事件**（带 `reason` + `recovered`）—— 补上此前的盲区：除权限拒绝（有专门事件）和 `aborted`（自身 stop 的噪声）外，所有 `onerror` 都记录原因。之前非拒绝类错误完全不埋点，才导致 `network` 这个真凶在数据里"隐形"、只能靠 prompt/granted 比值反推
+
+### Verified
+- Build 通过。真实打包产物注入 mock SpeechRecognition 驱动断言：
+  - **瞬断自愈**：点 1 次麦克风 → `prompt_shown`×1、`granted`×1；两次 `network` 各记 `mic_recognition_error(network, recovered:true)` + `mic_auto_restart`，`start()` 续跑、`stop()`=0、录音存活、**用户无任何报错**；`onresult` 出字后计数清零
+  - **持续断网**：连打 6 次 `network` → 前 5 次各自愈（`auto_restart`×5），第 6 次超上限 → 停止重启、显示「网络不稳定…」、`granted` 全程仍为 1、无死循环
+
+### Notes
+- 仍是治标：Web Speech 依赖 Google 在国内本就不稳，自愈只是把瞬断对用户隐藏。上线后回看 Supabase 应看到 `mic_prompt_shown` 向每题 ≈1 收敛、`mic_auto_restart` 与 `mic_recognition_error(reason=network)` 承接原来那些手动重点。若 `network` 占比确认很高，下一步才值得评估换 ASR（治本）
+
+---
+
 ## [0.12.1] — 2026-07-25
 
 ### Fixed

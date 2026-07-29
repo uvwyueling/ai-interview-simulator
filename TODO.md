@@ -1,5 +1,14 @@
 # 开发 TODO 清单
 
+## 🆕 v0.12.2（2026-07-29）· 麦克风 churn 第二洞：network 可自愈 ✅
+> 来源：7/27–7/28 埋点显示问题仍在——单会话 prompt_shown 76/101 对 answer_submitted 7/10（每题手动点 ~10 次），但 granted:prompt 已 1:1、auto_restart≈0、asrChars≈answerLen。定位：Web Speech(zh-CN) 流向 Google，国内弱网每 1–3 分钟丢 `network`，原代码当致命错 → 强制重点。
+
+- [x] **`network` 改可自愈**——保留 ref 让 onend 静默重启（发 mic_auto_restart），瞬断无感续上
+- [x] **连续失败上限 MAX_NETWORK_RETRIES=5**——超限停重启 + 弹「网络不稳定…改用键盘」；成功转写清零计数
+- [x] **新增 `mic_recognition_error` 事件（reason + recovered）**——补上"非拒绝类错误全不埋点"的盲区，坐实 network 真凶
+- [x] **验证**：mock 驱动瞬断自愈（无报错、granted 仍 1）+ 持续断网超限（auto_restart×5 后停、无死循环）
+- [ ] ⚠️ **上线后回看 Supabase**：确认 `mic_prompt_shown` 向每题 ≈1 收敛、`mic_auto_restart` 与 `mic_recognition_error(reason=network)` 承接原来的手动重点；若 network 占比高，再评估换 ASR（治本）
+
 ## 🆕 v0.12.1（2026-07-25）· 麦克风录音核心 bug 修复 ✅
 > 来源：Supabase 数据发现单会话 `mic_permission_granted` 触发 74 次、循环上 asrChars 全空、granted 与 prompt_shown 同毫秒。根因：`InterviewStep.tsx` 语音识别 effect 缺 `onend` 自动重启 + `no-speech` 被当致命错误。
 
