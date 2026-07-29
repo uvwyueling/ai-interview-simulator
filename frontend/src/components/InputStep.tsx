@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import { useInterview } from "@/context/InterviewContext";
 import type { Question } from "@/types/interview";
-import { track, EVENTS, trackAppViewed } from "@/lib/analytics";
+import { track, EVENTS } from "@/lib/analytics";
 import { fetchWithTimeout, isTimeoutError } from "@/lib/fetchWithTimeout";
 
 const SAMPLE_RESUME = `张同学  ·  应届硕士
@@ -71,11 +71,6 @@ export default function InputStep() {
   const [error, setError] = useState("");
   const [fileLoading, setFileLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Upload UI shown → user is past any (future) invite wall. Once per visit.
-  useEffect(() => {
-    trackAppViewed();
-  }, []);
 
   const processFile = async (file: File) => {
     const ext = file.name.split(".").pop()?.toLowerCase();

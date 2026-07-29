@@ -11,8 +11,7 @@ import { getAnonId, getSessionId } from "./identity";
 
 /** Canonical event names — use these constants, never raw strings, to avoid typos. */
 export const EVENTS = {
-  LANDED: "landed", // page loaded at the URL (top of funnel)
-  APP_VIEWED: "app_viewed", // upload UI actually rendered (i.e. past any invite wall)
+  LANDED: "landed", // page loaded at the URL (top of funnel; also = "app UI shown", since there is no invite wall — `app_viewed` was merged into this)
   FIRST_INTERACTION: "first_interaction", // first real user gesture → "this is a human"
   INPUT_COMPLETED: "input_completed",
   QUESTIONS_GENERATED: "questions_generated",
@@ -47,7 +46,6 @@ const APP_ENV: "prod" | "dev" =
 
 const SRC_KEY = "echo_src";
 const LANDED_AT_KEY = "echo_landed_at";
-const APP_VIEWED_KEY = "echo_app_viewed";
 
 /**
  * Acquisition source from the landing URL's `?src=` (e.g. douban / xhs).
@@ -148,18 +146,6 @@ export function trackLanded(): void {
     referrer: document.referrer || "",
     webdriver: navigator.webdriver === true,
   });
-}
-
-/** Call when the upload UI is actually shown. Fires once per visit (survives refresh). */
-export function trackAppViewed(): void {
-  if (typeof window === "undefined") return;
-  try {
-    if (sessionStorage.getItem(APP_VIEWED_KEY)) return;
-    sessionStorage.setItem(APP_VIEWED_KEY, "1");
-  } catch {
-    /* ignore — fall through and still fire once for this render */
-  }
-  track(EVENTS.APP_VIEWED);
 }
 
 // The strongest "this is a real human" signal: any genuine user gesture. Headless

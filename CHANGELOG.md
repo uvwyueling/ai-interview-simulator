@@ -6,6 +6,17 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.12.3] — 2026-07-29
+
+### Removed
+- **`app_viewed` 事件** —— 退役第一个"建设期脚手架"埋点。它当初为一个从未上线的邀请墙预埋（本意是"越过墙、看到上传 UI"），但墙不存在，于是它一直紧跟 `landed` 后脚跟触发、纯冗余。`landed`（页面加载即触发）现在单独代表"进来了 / 看到 app"。删除内容：`EVENTS.APP_VIEWED` 常量、`trackAppViewed()` 函数、`echo_app_viewed` sessionStorage key，以及 `InputStep` 里的调用与随之空掉的 `useEffect` import
+
+### Notes
+- 埋点生命周期的第一次"拆脚手架"实践：漏斗从 `landed → app_viewed → first_interaction → …` 简化为 `landed → first_interaction → …`，不丢任何信号（两者本就前后脚触发）。历史数据里的 `app_viewed` 行仍在 Supabase，不受影响；新会话不再产生该事件
+- 对比留作参照：mic 微漏斗（`mic_prompt_shown` 等 5 个）同属脚手架，但仍在调查中、**暂不退役**；`contact_cta_*` 属"年轻脚手架"，也未到退役期
+
+---
+
 ## [0.12.2] — 2026-07-29
 
 ### Fixed
