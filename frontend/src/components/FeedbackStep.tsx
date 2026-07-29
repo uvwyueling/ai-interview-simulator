@@ -392,6 +392,15 @@ export default function FeedbackStep({ onRestart }: Props) {
   const SUMMARY_IDX = -1;
   const [selectedIdx, setSelectedIdx] = useState<number>(0);
 
+  // Land at the top when entering the feedback step. The scroll position is
+  // otherwise inherited from the interview page (scrolled down), which — because
+  // the still-generating feedback page is short — dropped the user straight onto
+  // the bottom contact CTA ("图穷匕见"). Reset so they read their feedback first,
+  // then discover the CTA by scrolling. Instant (no smooth) since it's on mount.
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
   const fetchOne = async (i: number) => {
     setLoadingStates((prev) => {
       const n = [...prev];
