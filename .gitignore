@@ -11,3 +11,6 @@
 .env*.local
 # Claude Code 本地工具配置
 .claude/
+
+# 用户埋点数据
+supabase_export/
