@@ -16,10 +16,21 @@ export async function fetchWithTimeout(
 ): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  // Honour a caller-supplied signal. The spread below sets `signal` AFTER
+  // ...init, so anything the caller passed was silently discarded — this
+  // function accepted a signal and ignored it. That made the transcription
+  // 「跳过」 button a no-op: it aborted a controller nothing was listening to.
+  const external = init.signal;
+  const onExternalAbort = () => controller.abort();
+  if (external?.aborted) controller.abort();
+  else external?.addEventListener("abort", onExternalAbort, { once: true });
+
   try {
     return await fetch(url, { ...init, signal: controller.signal });
   } finally {
     clearTimeout(timer);
+    external?.removeEventListener("abort", onExternalAbort);
   }
 }
 

@@ -25,6 +25,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - `userEditDistance` **只在 `segmentCount===1 && upgraded` 时上报**：多段回答里升级后又口述追加的内容会被算成「编辑」，正好污染那个本该证明「转写够不够好」的数字。`segmentCount` 永远上报，使这个过滤在 SQL 里可见。
 
 ### Fixed
+- **「跳过」按钮完全不起作用**（真机实练发现）—— 两个 bug 叠在一起，都与 mock 无关：
+  - `fetchWithTimeout` 的 `fetch(url, { ...init, signal: controller.signal })` 把 `signal` 写在展开**之后**，**静默覆盖掉调用方传入的 signal**。这个工具函数一直是「接受 `signal` 然后丢弃」，于是 `cancelUpgrade()` abort 的是一个没人监听的 controller。现在会把外部 signal 链到内部 controller 上。其余三个调用点都没传过 signal，改动向后兼容
+  - 即便 abort 生效，用户取消与超时**都表现为 `AbortError`**，`isTimeoutError()` 分不开；原判断写成 `aborted && !isTimeoutError(err)`，后半恒为 false，于是每次「跳过」都会被记成 `timeout`。改为只看自己那个 controller 的 `aborted`——它只由 `cancelUpgrade` 触发，超时用的是 `fetchWithTimeout` 内部另一个 controller
+- **「跳过」在视线之外** —— 它原本只在麦克风按钮下方，而等待期间用户的视觉中心在右侧文字框（真机实练反馈：靠截图才发现）。现在文字框右上角「优化中」左边加了第二个，样式与行为完全一致。同样只在 `transcribing` 阶段出现——`stopping` 阶段还在收录音，没有东西可跳
 - **「话音刚落就点停止」会把尾巴复制一遍**（真机实练发现）—— 停止时手动做了 `setTranscript(transcript + interimTranscript)`，但 `recognition.stop()` 之后 Chrome 会把待定音频**最终化并再发一次 `onresult(isFinal)`**，`onresult` 自己也会追加，于是同一段话进去两次（实测约 120 字重复）。等文字定稿再停就没事——正是这个复现条件指出了根因。原注释写的「停止会丢词」是错的：Chrome 不丢，它会补发。
   - 第一版修法（轮询等文本不再变化）**更糟且已废弃**：第一次比较可能平凡成立（最终化尚未到达时 `now === last`），于是拿短稿返回、升级结果把尾巴**覆盖删掉**。实测轨迹 `t≈2.0s "AAABBB"` → `t≈3.0s "AAA"`。重复只是难看，删字是真丢用户内容。
   - 最终版：不猜时间，**等 Web Speech 自己的 `onend`**（它在最终化之后才触发），其后仅做短轮询覆盖 React 提交延迟，另加 2 秒兜底防止个别引擎不报 end。定时器分不清「已完成」和「还没开始」，`onend` 分得清。

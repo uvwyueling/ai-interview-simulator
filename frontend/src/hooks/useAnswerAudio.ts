@@ -225,8 +225,12 @@ export function useAnswerAudio(opts: { enabled: boolean }) {
         const latencyMs = Date.now() - startedAt;
         if (gen !== generationRef.current) return { status: "abandoned" };
         setPhase("idle");
-        // The user pressing 跳过 aborts the same controller a timeout would.
-        if (controller.signal.aborted && !isTimeoutError(err)) {
+        // This controller is aborted by cancelUpgrade and nothing else — the
+        // timeout lives on a separate controller inside fetchWithTimeout. Check
+        // it on its own: a user abort and a timeout both surface as AbortError,
+        // so isTimeoutError cannot tell them apart and ANDing with it here made
+        // every 跳过 report itself as `timeout`.
+        if (controller.signal.aborted) {
           return { status: "failed", reason: "user_skip", latencyMs };
         }
         return { status: "failed", reason: isTimeoutError(err) ? "timeout" : "network", latencyMs };

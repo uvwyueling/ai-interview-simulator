@@ -1333,9 +1333,24 @@ export default function InterviewStep() {
               </div>
             </div>
             {isUpgrading && (
-              <div className="flex items-center gap-1.5 text-[11px] text-indigo-600 font-medium">
-                <span className="w-2.5 h-2.5 rounded-full border-2 border-indigo-200 border-t-indigo-600 animate-spin" />
-                优化中
+              <div className="flex items-center gap-2.5 text-[11px] text-indigo-600 font-medium">
+                {/* Second 跳过, mirroring the one under the mic. During the wait the
+                    user is watching the TEXT, not the mic — the left-hand control
+                    sits outside their field of view and goes unfound (reported
+                    from a live run). Same affordance in both places is cheaper
+                    than hoping they look left. */}
+                {audio.phase === "transcribing" && (
+                  <button
+                    onClick={audio.cancelUpgrade}
+                    className="text-[12px] font-normal text-slate-400 hover:text-slate-600 underline underline-offset-2"
+                  >
+                    跳过
+                  </button>
+                )}
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full border-2 border-indigo-200 border-t-indigo-600 animate-spin" />
+                  优化中
+                </span>
               </div>
             )}
             {isEditable && (
