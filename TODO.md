@@ -1,5 +1,49 @@
 # 开发 TODO 清单
 
+## 🆕 v0.13.0（2026-08-12）· 上传前的样例报告（P0-1）✅
+> 来源：prod 埋点（7/24–7/28）**43 访客 → 15 真人 → 仅 4 人填简历**，12/15 的真人在粘贴简历前就走了。断点不在产品里，在"没人知道这一小时能换到什么"。
+
+- [x] **首屏次级入口「30 秒看一份样例报告 →」+ 弹层就地预览**（桌面大 Modal / 移动全屏）——不走 step 切换，因为 `InputStep` 的 resume/jd 是本地 state，切 step 会 unmount 并抹掉已粘贴的草稿
+- [x] **两套人设可切换**（技术岗 / 市场营销），内容由真实 API 跑一遍生成后固化进 `lib/sampleReports.ts`
+- [x] **预期管理文案**——「完整体验约需 40–60 分钟 · 建议桌面版 Chrome · 找个能出声的地方」（对应旧清单 H 项）
+- [x] **3 个埋点**：`sample_report_cta_clicked` → `sample_report_viewed`（在 effect 里发）→ `sample_report_completed`（dwell≥20s ∪ 滚到底 ∪ ≥2 区块穿过阅读带，带 `reason`）
+- [x] **修 3 个实现 bug**：祖先 transform 把 fixed 弹层拽出视口（改 portal）／CTA 焦点被 React 卸载重置（改 effect）／阅读带信号恒为 0（threshold 改 rootMargin）
+- [ ] ⚠️ **上线后回看 Supabase**：核心问题是"看样例是否提升上传意愿"。查同一 session 内 `sample_report_completed` → `input_completed` 的转化，与**没看样例的访客**对比。目标：真人 → `input_completed` 从 27% 提到 ≥50%
+- [ ] ⚠️ **确认 `sample_report_viewed` 在生产只发一次**——dev 下 React StrictMode 会双发，生产构建不会，但上线首日应核对 `cta_clicked : viewed` 是否 ≈1:1
+
+## 🆕 v0.13.1（2026-08-12）· 出题分类标签岗位中立化 ✅
+
+- [x] **`category` 枚举换成岗位中立的五类**：项目经历 / 专业深度 / 方案设计 / 行为面试 / 岗位认知，每类附定义让模型正确映射；prompt 显式禁止给非技术岗打带「技术」字样的标签
+- [x] **词表落到 `types/interview.ts` 的 `QUESTION_CATEGORIES`**（与 `DIMENSION_LABELS` 同处）；`Question.category` 保持 `string`，不做 z.enum——标签跑偏是观感问题，为它挂 Zod 会白烧一次重试
+- [x] **同步改写死的 demo 数据**（`DEMO_POOL` / `DEMO_QUESTIONS` / `sampleReports.ts`），避免 demo 与真实面试两套词
+- [x] **真实 API 复测**：两套人设均无技术味标签，原先出问题的营销题现归为「专业深度」
+
+## 🔴 本轮生成样例时发现、尚未修复的产品问题
+
+- [ ] **键盘作答用户被计时数据误伤评分（P0，影响真实用户）** —— `InterviewStep.tsx:235-239` 的计时器只在 `recording === true` 时递增，纯键盘作答的用户 `durationSeconds` 恒为 0 → `FeedbackStep.tsx:433` 算出 `speakingTime = 0` → `generate-feedback` 的 `buildTimingNote` 生成「候选人本题总回答时长：0 秒」→ LLM 判定"互动深度严重不足"并大幅压分。**实测对照：同一份回答，计时荒谬时总分 42（communication 60），计时正确时总分 82（communication 85），相差 40 分。**
+  - 真实影响：session `f58e6cf6`（豆瓣来源，**唯一一个非伦敦的真实完整完成者**）全程键盘作答，5 题中 4 题 `durationSec: 0`；他完成后点了 contact_cta 但没提交
+  - 修法二选一：① 计时改为"进入该题到提交"的墙钟时间，埋点上区分 `durationSec` 与 `speakingSec`（更根本）② `speakingTime === 0` 时让 `buildTimingNote` 输出"本题为键盘作答，无语音时长数据，请勿据此评价表达节奏"（更小、立即止血）
+- [x] ~~**出题的 `category` 枚举仍是硬编码技术味标签（P1）**~~ —— 已在 v0.13.1 修复
+
+## 🔜 v0.14.0（下一轮）· hybrid ASR —— 规格已与用户对齐，待实现
+> 决策：Web Speech 保留实时字幕体验，停止录音后调云端 ASR 做一次高精度转写并替换初稿。**阶段性**方案，供应商后定。
+
+- [ ] **链路**：点录音 → Web Speech 出实时字幕 ＋ MediaRecorder 同步录压缩音频 → 停止 → 「正在优化转写…」→ POST `/api/transcribe` → 云 ASR 返回高精度文本 → 替换初稿 → 用户检查/编辑/提交
+- [ ] **供应商适配层**：`ASR_PROVIDER` 环境变量切换（`mock` 本地/CI 验收 · `openai` 仅内部测试 · 最终供应商后补）。**不把 OpenAI 写死进产品架构**
+- [ ] **热词**：从简历、JD、当前题目提取短词表作为 ASR 热词/提示词（React / TypeScript / CRDT / GMV / ROI / 字节跳动 …）
+- [ ] **双模式 + 首次授权弹窗**：「高准确转写」与「仅浏览器转写」；进面试页前弹一次产品自己的模式选择说明，选完记住、面试页留低干扰的「语音设置」入口可切换。**产品弹窗与浏览器权限弹窗必须分开**——不要在产品弹窗里调 `getUserMedia()`
+  - 默认值分两阶段：供应商与隐私条款未确认前**默认「仅浏览器转写」**；云 ASR 完成准确率/稳定性/隐私验证后，弹窗中预选「高准确转写（推荐）」
+- [ ] **音频处理**：只在内存中暂存，转写完成或失败后立即丢弃；不落对象存储/数据库/日志，不缓存请求体，不把音频或转写原文写进错误监控；超时、取消、切题、报错时同样释放；限制单段时长与大小
+  - ⚠️ **必须显式设 `audioBitsPerSecond`（建议 16000）**：MediaRecorder 用浏览器默认码率（webm/opus 约 128kbps）时，最长那条 257 秒的回答约 4.1MB，会贴上 Vercel 4.5MB 的请求体上限；16kbps 下同样长度只有约 514KB
+- [ ] **隐私页与弹窗文案改写**：现有「不录制、不上传你的音频」必须改。**两方都要写明**——浏览器转写时音频由浏览器内置服务（如 Chrome 的 Google 识别）处理；高准确模式在此基础上额外发一份给高精度识别服务
+- [ ] **埋点（5 项指标 + 转写评分 UI）**：`asrUpgradeDistance`（Web Speech 初稿 → 云 ASR 的编辑距离，证明升级值不值）、`userEditDistance`（云 ASR → 用户提交，证明够不够好）、`transcribeLatencyMs`、`transcribeFailed` / 降级率、`userEdited` 布尔值，加一个「这次转写准不准？」的 👍/👎（`transcript_rated`）。**只传数字，绝不传文本**
+- [ ] **上线后重测面试时长**——当前 71 分钟的中位数是在旧 ASR 下跑出来的，ASR 改完再测一轮，届时再定要不要动面试长度（快速模式 / 减少题数）
+
+## 🟡 已确认但本轮未做
+
+- [ ] **ContactCTA 改造** —— `contact_cta_clicked` 绑在输入框 `onFocus`（`ContactCTA.tsx:65`），所以那 2 次是**"光标已点进输入框、准备填了才放弃"**，不是"没看到"。表已建好、0 行，故障排除，问题是劝退。改法：把「留个联系方式」换成说清回报的文案，并允许**只留言不留联系方式**（降门槛）
+- [ ] **`latinRatio` 备选埋点** —— 回答里英文字符占比。用户本轮未采纳，但它是验证"中文里夹英文词就容易错"这个假设的唯一手段，一行正则的成本。若 v0.14.0 上线后 `userEditDistance` 仍高，再加
+
 ## 🆕 v0.12.2（2026-07-29）· 麦克风 churn 第二洞：network 可自愈 ✅
 > 来源：7/27–7/28 埋点显示问题仍在——单会话 prompt_shown 76/101 对 answer_submitted 7/10（每题手动点 ~10 次），但 granted:prompt 已 1:1、auto_restart≈0、asrChars≈answerLen。定位：Web Speech(zh-CN) 流向 Google，国内弱网每 1–3 分钟丢 `network`，原代码当致命错 → 强制重点。
 

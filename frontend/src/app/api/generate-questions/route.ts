@@ -13,6 +13,8 @@ const RequestSchema = z.object({
 const QuestionSchema = z.object({
   id: z.string(),
   text: z.string(),
+  // Advisory, not enforced — see QUESTION_CATEGORIES in types/interview.ts for
+  // the canonical vocabulary and why this stays a plain string.
   category: z.string(),
   difficulty: z.enum(["easy", "medium", "hard"]),
 });
@@ -34,7 +36,13 @@ const SYSTEM_PROMPT = `你是一位拥有 10 年经验的资深面试官，你�
 1. 第 1 题：针对简历中最亮眼的项目/经历，考察具体做法与决策
 2. 第 2 题：考察 JD 核心能力（该岗位的关键专业能力），有足够追问空间
 3. 第 3 题：行为面试或岗位匹配度，考察软实力与职业成熟度
-4. category 必须是以下之一：技术深度、项目经历、系统设计、行为面试、基础知识（可结合岗位灵活映射：技术岗常用「技术深度/系统设计」；非技术岗常用「项目经历/行为面试」）
+4. category 是这道题的考察类型，**必须**从下面五类里选一个最贴切的，原样输出括号前的名称：
+   - 项目经历（深挖简历里某一段具体经历的做法与决策）
+   - 专业深度（该岗位核心专业能力的细节、判断与取舍。技术岗即技术深度；非技术岗即其专业方法论，如营销的投放策略、产品的需求拆解）
+   - 方案设计（给一个开放场景让候选人从头设计。技术岗即系统设计；非技术岗如 campaign、增长、运营方案设计）
+   - 行为面试（协作、沟通、抗压、职业成熟度等软实力）
+   - 岗位认知（对该岗位、行业或业务本身的理解，以及与自身经历的匹配度）
+   ⚠️ 这五个名称适用于所有岗位方向。**不要给非技术岗的题目打上带「技术」字样的标签**，也不要自创这五类以外的名称。
 5. difficulty 必须是以下之一：easy、medium、hard
 
 严格按照以下 JSON 格式输出，不要包含任何其他文字、注释或 markdown 标记：

@@ -13,6 +13,14 @@ import { getAnonId, getSessionId } from "./identity";
 export const EVENTS = {
   LANDED: "landed", // page loaded at the URL (top of funnel; also = "app UI shown", since there is no invite wall — `app_viewed` was merged into this)
   FIRST_INTERACTION: "first_interaction", // first real user gesture → "this is a human"
+  // ── Sample-report mini-funnel (v0.13.0) ────────────────────────────────────
+  // The 07-24→07-28 funnel showed 15 humans → 4 input_completed: people left
+  // before pasting a résumé because nothing proved the ~60 minutes were worth it.
+  // These three answer "does showing a sample report move people to upload?" —
+  // read them in order, then join to INPUT_COMPLETED within the same session.
+  SAMPLE_REPORT_CTA_CLICKED: "sample_report_cta_clicked", // interest: someone wants to see a sample
+  SAMPLE_REPORT_VIEWED: "sample_report_viewed", // the report actually rendered (catches open-then-instant-close / render failures)
+  SAMPLE_REPORT_COMPLETED: "sample_report_completed", // a REAL read, not a bounce — see SampleReportModal for the three qualifying signals
   INPUT_COMPLETED: "input_completed",
   QUESTIONS_GENERATED: "questions_generated",
   INTERVIEW_STARTED: "interview_started",

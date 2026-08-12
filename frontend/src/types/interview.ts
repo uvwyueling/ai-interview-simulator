@@ -1,6 +1,31 @@
+/**
+ * Canonical question categories — job-neutral by design (v0.13.1).
+ *
+ * Shown verbatim to the user in three places (the interview-page badge, the
+ * feedback tab, the exported PDF), so the vocabulary has to fit every role.
+ * The previous set was hard-coded technical (技术深度 / 系统设计) and forced
+ * non-technical interviews into the nearest technical-sounding bucket — a real
+ * marketing question about content-health metrics came back tagged 技术深度.
+ * Now mirrors DIMENSION_LABELS below, which already swapped 技术深度 for
+ * 专业深度 in v0.10.0.
+ *
+ * `Question.category` stays a plain string rather than this union: an off-list
+ * label is purely cosmetic, and failing Zod over it would burn a retry — or the
+ * whole interview — for nothing. The generate-questions prompt is where the
+ * constraint is applied; this is the shared reference it's written against.
+ */
+export const QUESTION_CATEGORIES = [
+  "项目经历",
+  "专业深度",
+  "方案设计",
+  "行为面试",
+  "岗位认知",
+] as const;
+
 export type Question = {
   id: string;
   text: string;
+  /** Normally one of QUESTION_CATEGORIES — advisory, see above. */
   category: string;
   difficulty: "easy" | "medium" | "hard";
 };

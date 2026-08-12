@@ -29,13 +29,13 @@ const DEMO_QUESTIONS: Question[] = [
   {
     id: "q2",
     text: "如果要设计一个支持多人实时协作的白板应用，你会如何考虑前端架构和状态同步方案？",
-    category: "系统设计",
+    category: "方案设计",
     difficulty: "hard",
   },
   {
     id: "q3",
     text: "请解释 React 中 useCallback 与 useMemo 的区别，以及各自适用的场景。",
-    category: "基础知识",
+    category: "专业深度",
     difficulty: "easy",
   },
 ];

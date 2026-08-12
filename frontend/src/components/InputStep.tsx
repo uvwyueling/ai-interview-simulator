@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useInterview } from "@/context/InterviewContext";
 import type { Question } from "@/types/interview";
 import { track, EVENTS } from "@/lib/analytics";
 import { fetchWithTimeout, isTimeoutError } from "@/lib/fetchWithTimeout";
+import SampleReportModal from "./SampleReportModal";
 
 const SAMPLE_RESUME = `张同学  ·  应届硕士
 教育: 计算机科学硕士, 2024
@@ -30,7 +31,7 @@ const DEMO_POOL: Omit<Question, "id">[] = [
   },
   {
     text: "你提到掌握图算法，请结合实际项目经验说明如何使用图论知识优化白板中元素之间的关系处理或渲染性能？",
-    category: "技术深度",
+    category: "专业深度",
     difficulty: "hard",
   },
   {
@@ -40,7 +41,7 @@ const DEMO_POOL: Omit<Question, "id">[] = [
   },
   {
     text: "对于一个复杂的编辑器产品，你会如何选择和设计状态管理方案？请对比 Redux、Zustand、MobX 等方案在协作编辑场景下的优劣，以及你会如何架构来支持高频的状态更新和撤销/重做功能。",
-    category: "系统设计",
+    category: "方案设计",
     difficulty: "hard",
   },
   {
@@ -50,7 +51,7 @@ const DEMO_POOL: Omit<Question, "id">[] = [
   },
   {
     text: "假设要开发一个在线代码编辑器的核心编辑模块，需要支持实时多人协作、高性能渲染和复杂的撤销/重做栈。请说明你会如何设计整体架构，状态管理方案选择，以及前后端如何协作。",
-    category: "系统设计",
+    category: "方案设计",
     difficulty: "hard",
   },
 ];
@@ -71,6 +72,25 @@ export default function InputStep() {
   const [error, setError] = useState("");
   const [fileLoading, setFileLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const resumeRef = useRef<HTMLTextAreaElement>(null);
+  // Sample report lives in an overlay, NOT a step change — `resume` / `jd` above
+  // are local state, so unmounting this component would wipe a pasted draft.
+  const [showSample, setShowSample] = useState(false);
+  // Set when the visitor leaves the sample via "用我的简历试试": drop them on the
+  // résumé field instead of a page they already scrolled past.
+  const [focusResumeAfterClose, setFocusResumeAfterClose] = useState(false);
+
+  // Deliberately an effect, not a requestAnimationFrame inside the click handler:
+  // rAF races React's unmount commit, and the focus landed while the modal's
+  // portal was still mounted got reset to <body> when that subtree was removed
+  // (observed: activeElement === BODY). An effect runs after the commit, so the
+  // overlay is provably gone by the time we focus.
+  useEffect(() => {
+    if (showSample || !focusResumeAfterClose) return;
+    setFocusResumeAfterClose(false);
+    resumeRef.current?.focus();
+    resumeRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [showSample, focusResumeAfterClose]);
 
   const processFile = async (file: File) => {
     const ext = file.name.split(".").pop()?.toLowerCase();
@@ -213,6 +233,40 @@ export default function InputStep() {
         <p className="mt-3 text-[13px] sm:text-[14px] text-slate-500 max-w-xl mx-auto px-2">
           上传简历和岗位 JD，AI 将生成 3 道核心面试题，并根据你的回答实时追问（最多 3 次），模拟真实深度面试体验。
         </p>
+
+        {/* Sample-report entry — the funnel showed people leaving before pasting
+            anything, so give them the payoff to look at first. Secondary styling
+            on purpose: it must not out-compete the primary upload flow. */}
+        <div className="mt-5 flex flex-col items-center gap-2.5">
+          <button
+            onClick={() => {
+              track(EVENTS.SAMPLE_REPORT_CTA_CLICKED);
+              setShowSample(true);
+            }}
+            className="inline-flex items-center gap-2 text-[13px] font-medium text-indigo-600 bg-white ring-1 ring-indigo-200 hover:ring-indigo-400 hover:bg-indigo-50/50 rounded-lg px-4 py-2.5 transition"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              className="w-4 h-4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+            30 秒看一份样例报告 →
+          </button>
+          {/* Expectation management: the observed median session is ~70 minutes.
+              Saying so up front costs some clicks but buys far fewer abandoned
+              half-interviews (and matches what the promo copy should say). */}
+          <p className="text-[11.5px] text-slate-400">
+            完整体验约需 40–60 分钟 · 建议桌面版 Chrome · 找个能出声的地方
+          </p>
+        </div>
+
         <div className="mt-4 inline-flex items-center gap-1.5 text-[11px] sm:text-[12px] text-slate-400 bg-slate-100/70 rounded-full px-3 py-1.5 max-w-full">
           <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 text-emerald-500" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
@@ -321,6 +375,7 @@ export default function InputStep() {
           </div>
 
           <textarea
+            ref={resumeRef}
             value={resume}
             onChange={(e) => setResume(e.target.value)}
             placeholder="…或者直接在这里粘贴你的简历文本"
@@ -449,6 +504,16 @@ export default function InputStep() {
           推荐 Chrome 桌面端：语音作答与 PDF 解析体验最佳（其他浏览器可粘贴文本、键盘作答）
         </div>
       </div>
+
+      {showSample && (
+        <SampleReportModal
+          onClose={() => setShowSample(false)}
+          onStartOwn={() => {
+            setFocusResumeAfterClose(true);
+            setShowSample(false);
+          }}
+        />
+      )}
     </section>
   );
 }

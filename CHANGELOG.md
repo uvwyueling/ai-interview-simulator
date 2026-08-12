@@ -6,6 +6,48 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.13.1] — 2026-08-12
+
+### Fixed
+- **非技术岗的题目被打上带「技术」字样的分类标签** —— 出题 prompt 里 `category` 仍限定为「技术深度／项目经历／系统设计／行为面试／基础知识」，五类里三类是技术味的，非技术岗只能被塞进最接近的那个技术桶。实测：营销人设那道问「内容健康度如何衡量」的题，被打成了 **技术深度**。而 `DIMENSION_LABELS.technicalDepth` 早在 v0.10.0 就已改为「专业深度」——出题侧漏改了，两套词表自 v0.10.0 起一直不一致。
+  - **换成一套岗位中立的五类**，每类都给出定义让模型正确映射：项目经历 / **专业深度**（技术岗即技术深度，非技术岗即其专业方法论）/ **方案设计**（技术岗即系统设计，非技术岗如 campaign、增长、运营方案设计）/ 行为面试 / **岗位认知**。prompt 里显式加了「不要给非技术岗的题目打上带『技术』字样的标签」
+  - **词表落在 `types/interview.ts` 的 `QUESTION_CATEGORIES`**，和 `DIMENSION_LABELS` 放在一起。`Question.category` 仍是 `string` 而非该联合类型：标签跑偏纯属观感问题，为它挂掉 Zod 会白白烧掉一次重试甚至整场面试——约束由 prompt 施加，这里只作为共享参照
+  - **同步改掉写死的 demo 数据**（`InputStep` 的 `DEMO_POOL`、`page.tsx` 的 `DEMO_QUESTIONS`、`lib/sampleReports.ts`），否则用户会在 demo 里看到一套词、在真实面试里看到另一套
+
+### Verified
+- `npm run build` 通过，无新增警告。构建本身拦下一个错误：App Router 的 route 文件不允许导出自定义常量，`QUESTION_CATEGORIES` 因此从 `generate-questions/route.ts` 移到了 `types/interview.ts`——那本来就是它该在的地方
+- **真实 API 复测两套人设**：营销岗得到 `项目经历 / 专业深度 / 行为面试`，技术岗得到 `项目经历 / 专业深度 / 行为面试`，均无技术味标签；此前出问题的那道营销题现在正确归为「专业深度」
+- 面试页分类徽章渲染正常（新旧标签均为四字，无布局风险）
+
+---
+
+## [0.13.0] — 2026-08-12
+
+### Added
+- **上传前的样例报告（P0-1）** —— 数据（prod，7/24–7/28）显示 **43 个访客 → 15 个真人 → 只有 4 个填了简历**：12/15 的真人在粘贴简历之前就走了。断点不在产品里，在"没人知道这一小时能换到什么"。现在首屏标题下加一个次级入口「30 秒看一份样例报告 →」，点开即见一份完整报告，**不需要上传任何东西**。
+  - **弹层就地预览，不走 step 切换** —— 桌面端大尺寸 Modal、移动端全屏。关键约束：`InputStep` 的 `resume` / `jd` 是本地 `useState`，而 `page.tsx` 只在 `step === "input"` 时挂载它，**切 step 会 unmount，把访客已经粘好的简历直接抹掉**——那正好和这个功能的目的相反。弹层让 InputStep 保持挂载，草稿零损失，关闭零成本
+  - **两套人设可切换（技术岗 / 市场营销）** —— 非技术岗的访客不该被一份前端工程师的报告劝退。营销那套的题目是预算分配逻辑、内容健康度阈值、KOL 投放取舍，零技术假设
+  - **内容非手写，是真跑出来的** —— 两个虚构人设走了一遍真实链路（`generate-questions` → `generate-followup` → `generate-feedback`，DeepSeek），输出固化进 `lib/sampleReports.ts`。回答按"编辑过的口语"来写并**故意留缺口**，好让追问判定真的触发——它确实触发了：对一份完整回答判了不必追问，还自己抓到了一处"问题后半段没答"
+  - **预期管理** —— 入口下方一行「完整体验约需 40–60 分钟 · 建议桌面版 Chrome · 找个能出声的地方」。实测中位时长 71 分钟，如实说会损失一些点击，但换来更少的半途弃跑
+- **样例报告小漏斗（3 个事件）** —— `sample_report_cta_clicked`（有兴趣）→ `sample_report_viewed`（**在 effect 里发，不在点击里发**，这样渲染失败会表现为事件缺失）→ `sample_report_completed`（真读过，非跳出）。三者接已有的 `input_completed`，回答"给人看样例，到底有没有提高上传意愿"
+  - `completed` 的三条判定任一即触发，并用 `reason` 区分：停留 ≥20s（`dwell`）/ 滚到底（`scrolled_to_end`）/ 至少 2 个核心区块穿过阅读带（`sections_read`），快速浏览者和慢读者都算得上，但"开了就关"不算
+
+### Fixed
+- **弹层被祖先 transform 拽出视口** —— `InputStep` 根 `<section>` 带 `.fade-up`，其 `animation-fill-mode: both` 让 `transform: translateY(0)` 永久留在元素上；**带 transform 的元素会成为 `position: fixed` 子元素的包含块**，于是 `fixed inset-0` 的遮罩相对 section 而非视口定位，页面一滚就飘（实测 modal top = **-33.5px**，底部 CTA 被切掉）。改为 `createPortal` 挂到 `<body>`，彻底摆脱任何祖先 transform
+- **「用我的简历试试」按钮没把焦点送到简历框** —— 原实现在点击回调里用 `requestAnimationFrame` 抢时序，和 React 卸载 portal 的提交撞车，焦点被重置回 `<body>`（实测 `activeElement === BODY`）。改为由 `showSample` 翻转驱动的 `useEffect`，提交之后再聚焦，确定性生效
+- **`sample_report_completed` 的"看过 N 个区块"信号恒为 0** —— 初版用 `threshold: 0.5`，但追问链、分维度点评这些区块**比滚动容器还高**，永远达不到 50% 可见度，于是 `sectionsSeen` 每次都是 0。改用 `rootMargin: "-35% 0px -35% 0px"` + `threshold: 0` 的中央阅读带，与区块高度无关
+- **移动端弹层头部折行** —— 375px 下人设 tab 被拆成两行，读起来像坏了。tab 文案收敛为「市场营销」并给标题与 tab 加 `whitespace-nowrap`（37% 的流量在移动端）
+
+### Verified
+- `npm run build` 通过，无新增警告（`InterviewStep.tsx:392` 那条 exhaustive-deps 为既有）
+- 浏览器实测：① 先粘贴草稿再开关弹层，草稿全程完好、关闭后焦点落在简历框 ② 三个事件按序上报、props 正确 ③ 阅读带信号在顶部为 0（不会"打开即算看过"）、滚到中段命中 2 个区块 ④ 人设切换、追问链展开、桌面/移动两种形态均正常
+
+### Notes
+- 本次生成样例时发现两处产品问题，均未在本版修复：**① 出题的 `category` 枚举仍是硬编码的技术味标签**（营销岗的题被打上「技术深度」，而 `DIMENSION_LABELS` 早在 v0.10.0 已改为「专业深度」）；**② 纯键盘作答的用户 `durationSeconds` 恒为 0**，反馈 prompt 收到"作答 0 秒"后会大幅压低评分——同一份回答实测相差 40 分（42 vs 82）。详见 TODO.md
+- 岗位泛化（v0.10.0）这次拿到了真实 API 验证：营销人设的追问与评价全程无技术假设，谈的是归因模型、内容健康度阈值、跨部门协同
+
+---
+
 ## [0.12.4] — 2026-07-29
 
 ### Fixed
