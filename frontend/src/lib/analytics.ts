@@ -29,6 +29,9 @@ export const EVENTS = {
   MIC_PERMISSION_DENIED: "mic_permission_denied", // onerror with not-allowed / service-not-allowed
   MIC_AUTO_RESTART: "mic_auto_restart", // recognition ended on its own (Chrome silence-timeout / recoverable error) and we silently restarted it — measures how choppy the session was
   MIC_RECOGNITION_ERROR: "mic_recognition_error", // any onerror we don't have a dedicated event for (network / audio-capture / no-speech…); carries `reason` + whether it was auto-recovered. The visibility we were missing.
+  // ── Speech mode (v0.14.0) ──────────────────────────────────────────────────
+  VOICE_MODE_DIALOG_SHOWN: "voice_mode_dialog_shown", // props: source (first_run|settings), cloudAvailable
+  VOICE_MODE_SELECTED: "voice_mode_selected", // props: mode, source, cloudAvailable, wasDefault — measures opt-in rate for uploading audio
   ANSWER_SUBMITTED: "answer_submitted",
   FOLLOWUP_TRIGGERED: "followup_triggered",
   FOLLOWUP_DEGRADED: "followup_degraded", // followup API failed → advanced without it
@@ -149,10 +152,22 @@ export function trackLanded(): void {
   }
   // src is auto-injected by track(); these live only on `landed`.
   // `webdriver` is a cheap bot signal (true under most automation tooling).
+  //
+  // `mediaRecorder` / `webSpeech` size an opportunity we can't otherwise see:
+  // WeChat's in-app browser and iOS Safari don't support Web Speech, so those
+  // visitors can only type today — but they DO support MediaRecorder, so a
+  // cloud-only path would give them voice. Measured on `landed` rather than the
+  // interview page deliberately: the widest denominator includes everyone who
+  // bounced, which is exactly the population in question.
   track(EVENTS.LANDED, {
     viewport_width: window.innerWidth,
     referrer: document.referrer || "",
     webdriver: navigator.webdriver === true,
+    mediaRecorder: typeof window.MediaRecorder !== "undefined",
+    webSpeech: !!(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition)
+    ),
   });
 }
 

@@ -6,6 +6,49 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.14.0] — 2026-08-12 · hybrid ASR 第一批（模式层）
+
+> 目标：Web Speech 保留实时字幕，用户**主动停止**录音后调云端 ASR 做一次高精度转写替换初稿。简历与 JD 是天然术语表，作为热词传给识别服务——中英混排恰恰是词表最能救的那类错误。
+> **本批只交付模式层，不含任何录音代码。** 供应商与隐私条款落定前，默认「仅浏览器转写」，功能 dark launch。录音链路为第二批。
+
+### Added
+- **双模式 +「语音设置」** —— 首次进面试页弹一次产品自己的说明弹窗（「高准确转写」/「仅浏览器转写」），选择存 localStorage，面试页麦克风下方常驻一个模式芯片可随时切换。
+  - **产品弹窗与浏览器权限弹窗严格分离** —— `VoiceModeDialog` 里绝不出现 `getUserMedia` / `MediaRecorder`，文件头注释写死了这条。两个授权语境叠在一起会把人吓跑，埋点里已经有一个用户直接拒绝了麦克风授权。
+  - 供应商不可用时，高准确卡片**渲染为禁用 +「暂未开放」而不是隐藏**——隐藏会让将来的开放显得像一次静默变更。
+  - 已存的 `cloud` 选择在供应商不可用时**只降级生效模式、不改写存储的偏好**，供应商恢复后自动尊重用户原选择，无需再问一次。
+- **`GET /api/transcribe` 能力探测** —— 客户端问服务端「现在到底能不能做」，而不是读一个 build-time 开关。开关只表达意图：key 缺失或 `ASR_PROVIDER` 拼错时它照样声称可用，用户说完两分钟才发现。端点从 `isAsrConfigured()` 派生，不可能与 POST 的真实行为不一致。**失败一律 fail closed**。顺带避免引入本项目第一个 `NEXT_PUBLIC_` 变量。
+- **`POST /api/transcribe`** —— multipart 接收音频 + 初稿 + 热词，交给可替换的供应商适配层。
+  - **音频只在内存中存在**：`arrayBuffer()` 读一次往下传，返回即出作用域。不落对象存储、数据库、文件，不缓存请求体。
+  - **日志纪律**（每个 catch 都写了注释）：只允许打 `err.name`、`AsrError.code`、上游 HTTP status。**绝不 `console.error(err)`** —— fetch/SDK 的 error 对象常把 request body 挂在上面，而这里的 body 就是用户的音频和他说过的话。
+  - **不带 anonId / sessionId** —— 这个端点不需要与人关联。指标在浏览器算好后走 `/api/track`。
+  - 独立限流桶 `transcribe:` 20/min，**不与 `llm:` 共用**：它按音频秒数计费、体积大两个数量级，不能和出题抢预算。
+- **供应商适配层** —— `ASR_PROVIDER` 切换（`mock` 本地/CI 验收 · `openai` 仅内部测试 · 最终供应商后补）。**未知值返回 null 而非抛错**：生产环境拼错一个字母应该降级到浏览器模式，不该让面试页 500。OpenAI 用裸 `fetch` 而非 SDK——引入厂商 SDK 正是这层要避免的硬绑定。
+- **热词提取** `lib/asr/hints.ts` —— 客户端运行（否则每段音频都要附带整份简历+JD，让 PII 在传输和服务端内存里多存几十份副本；路由仍重新校验数量与长度）。
+- **移动端探测点** —— `landed` 加 `mediaRecorder` / `webSpeech` 两个布尔。微信内置浏览器和 iOS Safari 不支持 Web Speech 但支持 MediaRecorder，这批人今天只能打字。放在 `landed` 而非面试页是为了拿**最宽的分母**，包括那些根本没走到面试页的人。
+- 埋点 `voice_mode_dialog_shown` / `voice_mode_selected`（含 `cloudAvailable`、`wasDefault`），量化上传音频的主动选择率。
+
+### Changed
+- **隐私文案改写，两种模式都说清楚** —— 原文「不录制、不上传你的音频」删除。现在明确：浏览器转写时音频由**浏览器厂商自己的识别服务**处理（Chrome 会发给 Google，这一点原文从未说明）；高准确转写在此基础上**额外**发一份给高精度识别服务，仅在内存中处理、完成或失败后立即丢弃。「我们不做什么」里的「不录制音频」改为「不长期保存音频」；第三方服务清单补上两条识别服务。
+- `lib/textDistance.ts` 的距离指标同时输出**原始**与**归一化**两个数。Web Speech 的 zh-CN 不输出标点、多数云 ASR 输出「。，、」，裸编辑距离会把每个新增标点算成一次「升级」——等于凭空制造这个指标本来要检验的商业理由。实测同一句话 raw=4 / core=0。
+
+### Removed
+- `VoiceRecorder.tsx` + `useVoiceRecorder.ts`（273 行死代码，单独提交）—— 无任何 import，且是 InterviewStep 内联实现的旧版弱化副本（无 `grantedFiredRef` 保护、无 network 重试上限、无埋点）。删掉是因为它们正好叫「VoiceRecorder」：下一个做语音的人会理所当然地改进那个错的文件。
+
+### Verified
+- `npm run build` 通过，无新增警告。
+- 校验阶梯逐条实测：415 非 multipart → 400 无音频 → 200 `upgraded:false`（音频过小，保持 happy path 单一形态）→ 415 MIME → 400 时长越界 → 503 未配供应商 → 413 体积超限，**全部返回中文友好文案，无原始错误**。
+- `ASR_PROVIDER` 拼错为 `mokc` → `available:false`，页面正常、不 500；已存 `cloud` 的用户生效模式降级为 browser 而存储偏好保持 `cloud`。
+- 浏览器实测：首次进面试页弹一次 → 选择后持久化、刷新不再弹 → 芯片与首题提示同步显示当前模式 → 设置入口可 Escape 关闭且不改动 → 切换后两处文案同步。
+- dev server 日志中只有方法/路径/状态码，无音频、初稿或转写文本。
+- Supabase 中 `landed` 已带 `mediaRecorder` / `webSpeech`。
+- 热词在两套真实人设上核对：技术岗得到 FCP / CRDT / TypeScript / ByteSpark / 实时协作模块…，营销岗得到 campaign / ROI / GMV / KOL / CPM / 冷萃新品上市 / 小红书…（中文侧改用「按非中文字符切分取单元格」而非 n-gram：滑窗会产出「产品的前端架」「内容策」这类非词，作为热词会把识别往错的方向偏）。
+
+### Notes
+- 把初稿文本发到自己的服务器**不是新的数据类别**——`generate-followup` 早已 POST 完整回答文本。
+- 翻转默认值为「高准确」前必须先在隐私页公布供应商名，并把 `echo_voice_mode_v1` 升到 `_v2`，让当初的选择被重新征询而不是被静默重新解释。
+
+---
+
 ## [0.13.1] — 2026-08-12
 
 ### Fixed

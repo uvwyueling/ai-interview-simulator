@@ -47,9 +47,24 @@ export default function PrivacyPage() {
 
         <Section title="语音作答">
           <p>
-            语音转文字由浏览器内置的语音识别服务完成（如 Chrome 使用其自带的识别服务）。
-            我们只接收转写后的<span className="font-medium text-slate-800">文字</span>，不录制、不上传你的音频。
-            你可以在提交前手动编辑这些文字。
+            面试页提供两种语音转文字方式，
+            <span className="font-medium text-slate-800">默认是「仅浏览器转写」</span>，
+            你可以随时在面试页的「语音设置」中切换。两种方式下，你都可以在提交前手动编辑文字。
+          </p>
+          <p>
+            · <span className="font-medium text-slate-800">仅浏览器转写（默认）</span>：
+            识别由浏览器内置的语音服务完成——这意味着音频会由
+            <span className="font-medium text-slate-800">浏览器厂商自己的识别服务</span>处理
+            （例如 Chrome 会发送给 Google）。我们只接收转写后的文字，
+            <span className="font-medium text-slate-800">音频不会发送到本产品的服务器</span>。
+          </p>
+          <p>
+            · <span className="font-medium text-slate-800">高准确转写（可选）</span>：
+            在上述基础上，<span className="font-medium text-slate-800">额外</span>把一份压缩后的音频
+            发送给高精度识别服务，以便更准确地识别中文里夹杂的英文、数字与专业名词。
+            这份音频<span className="font-medium text-slate-800">仅在内存中处理</span>，
+            转写完成、失败、超时或被你取消后<span className="font-medium text-slate-800">立即丢弃</span>，
+            不写入存储、数据库、日志或错误上报，也不会用于训练。
           </p>
         </Section>
 
@@ -76,13 +91,15 @@ export default function PrivacyPage() {
 
         <Section title="我们不做什么">
           <p>
-            不需要注册账号 · 不存储简历原文 · 不录制音频 · 不将你的数据用于 AI 训练 · 不向第三方出售数据。
+            不需要注册账号 · 不存储简历原文 · 不长期保存音频（仅在内存中处理，转写后立即丢弃） · 不将你的数据用于 AI 训练 · 不向第三方出售数据。
           </p>
         </Section>
 
         <Section title="第三方服务">
           <p>
             · <span className="font-medium text-slate-800">DeepSeek API</span>：生成面试题与反馈。<br />
+            · <span className="font-medium text-slate-800">浏览器内置语音识别服务</span>：语音转文字（Chrome 为 Google 的识别服务）。<br />
+            · <span className="font-medium text-slate-800">高精度识别服务</span>：仅在你选择「高准确转写」时使用；供应商确定后会在此列明。<br />
             · <span className="font-medium text-slate-800">Supabase</span>：保存匿名使用统计。<br />
             · <span className="font-medium text-slate-800">Vercel</span>：应用托管。
           </p>

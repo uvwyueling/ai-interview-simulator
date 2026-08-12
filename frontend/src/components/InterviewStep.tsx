@@ -5,6 +5,9 @@ import type { Answer, Exchange, Question } from "@/types/interview";
 import { useInterview } from "@/context/InterviewContext";
 import { track, EVENTS } from "@/lib/analytics";
 import { fetchWithTimeout, isTimeoutError } from "@/lib/fetchWithTimeout";
+import VoiceModeDialog from "./VoiceModeDialog";
+import { DEFAULT_VOICE_MODE, readVoiceMode, writeVoiceMode, type VoiceMode } from "@/lib/voiceMode";
+import { getAsrCapability } from "@/lib/asrCapability";
 
 const MAX_FOLLOWUPS = 3;
 // Consecutive `network` errors (no successful transcript in between) tolerated
@@ -140,6 +143,13 @@ export default function InterviewStep() {
   } = useInterview();
 
   const [speechSupported, setSpeechSupported] = useState(true);
+  // ── Speech mode (v0.14.0) ──
+  // Ships dark: until a vendor and its privacy terms are settled, the honest
+  // default is the mode that uploads nothing. `null` = never chosen → ask once.
+  const [voiceMode, setVoiceMode] = useState<VoiceMode>(DEFAULT_VOICE_MODE);
+  const [voiceDialogOpen, setVoiceDialogOpen] = useState(false);
+  const [voiceDialogSource, setVoiceDialogSource] = useState<"first_run" | "settings">("first_run");
+  const [cloudAvailable, setCloudAvailable] = useState(false);
   const [recording, setRecording] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [interimTranscript, setInterimTranscript] = useState("");
@@ -192,6 +202,34 @@ export default function InterviewStep() {
     const w = window as any;
     setSpeechSupported(!!(w.SpeechRecognition || w.webkitSpeechRecognition));
   }, []);
+
+  // ── Speech mode: restore the choice, ask once if there isn't one ──
+  //
+  // Read in an effect rather than useState's initializer so SSR and the first
+  // client render agree. The demo path never asks and never uploads — it would
+  // spend money on fixtures and produce no meaningful metrics.
+  useEffect(() => {
+    if (isDemo) return;
+    const stored = readVoiceMode();
+    if (stored) setVoiceMode(stored);
+
+    let cancelled = false;
+    void getAsrCapability().then((cap) => {
+      if (cancelled) return;
+      setCloudAvailable(cap.available);
+      // A stored "cloud" choice is only honoured while the server can deliver
+      // it; otherwise fall back rather than promise an upgrade that won't come.
+      if (!cap.available && stored === "cloud") setVoiceMode("browser");
+      if (!stored) {
+        setVoiceDialogSource("first_run");
+        setVoiceDialogOpen(true);
+        track(EVENTS.VOICE_MODE_DIALOG_SHOWN, { source: "first_run", cloudAvailable: cap.available });
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isDemo]);
 
   // ── Reset UI when a new question becomes active ──
 
@@ -717,6 +755,17 @@ export default function InterviewStep() {
           </svg>
           <span>
             <span className="font-medium">使用方式：</span>点击麦克风开始作答 · AI 会根据你的回答<span className="font-medium">追问</span>（每题最多 3 次）· 停止录音后可在右侧<span className="font-medium">手动修改文字</span>再提交。
+            {/* Name the mode here too — nobody should have to read the privacy
+                page to find out whether their audio is being uploaded. */}
+            {!isDemo && (
+              <>
+                {" "}当前语音方式：
+                <span className="font-medium">
+                  {voiceMode === "cloud" ? "高准确转写" : "仅浏览器转写"}
+                </span>
+                。
+              </>
+            )}
           </span>
         </div>
       )}
@@ -839,6 +888,28 @@ export default function InterviewStep() {
                     "点击麦克风开始作答"
                   )}
                 </div>
+
+                {/* Mode chip — one control that both DISCLOSES the current mode
+                    and switches it. A hidden settings panel would be the less
+                    honest choice when the setting governs whether audio leaves
+                    the device. Hidden in demo, which never uploads. */}
+                {!isDemo && (
+                  <button
+                    onClick={() => {
+                      setVoiceDialogSource("settings");
+                      setVoiceDialogOpen(true);
+                      track(EVENTS.VOICE_MODE_DIALOG_SHOWN, { source: "settings", cloudAvailable });
+                    }}
+                    disabled={recording}
+                    className="mt-3 inline-flex items-center gap-1.5 text-[11.5px] text-slate-400 hover:text-indigo-600 disabled:opacity-50 disabled:hover:text-slate-400 transition"
+                  >
+                    <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" />
+                      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6h.09A1.65 1.65 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v.09a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                    </svg>
+                    {voiceMode === "cloud" ? "高准确转写" : "仅浏览器转写"} · 更改
+                  </button>
+                )}
 
                 <div className="mt-4">
                   <WaveBars active={recording} />
@@ -1115,6 +1186,31 @@ export default function InterviewStep() {
           )}
         </div>
       </div>
+
+      {voiceDialogOpen && (
+        <VoiceModeDialog
+          cloudAvailable={cloudAvailable}
+          initialMode={voiceMode}
+          source={voiceDialogSource}
+          onConfirm={(mode) => {
+            const wasDefault = readVoiceMode() === null;
+            setVoiceMode(mode);
+            writeVoiceMode(mode);
+            setVoiceDialogOpen(false);
+            track(EVENTS.VOICE_MODE_SELECTED, {
+              mode,
+              source: voiceDialogSource,
+              cloudAvailable,
+              wasDefault,
+            });
+          }}
+          // First run requires a choice — there is no dismiss, because the
+          // dialog is the disclosure, not a nag.
+          onDismiss={
+            voiceDialogSource === "settings" ? () => setVoiceDialogOpen(false) : undefined
+          }
+        />
+      )}
     </section>
   );
 }

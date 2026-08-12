@@ -25,19 +25,31 @@
   - 修法二选一：① 计时改为"进入该题到提交"的墙钟时间，埋点上区分 `durationSec` 与 `speakingSec`（更根本）② `speakingTime === 0` 时让 `buildTimingNote` 输出"本题为键盘作答，无语音时长数据，请勿据此评价表达节奏"（更小、立即止血）
 - [x] ~~**出题的 `category` 枚举仍是硬编码技术味标签（P1）**~~ —— 已在 v0.13.1 修复
 
-## 🔜 v0.14.0（下一轮）· hybrid ASR —— 规格已与用户对齐，待实现
-> 决策：Web Speech 保留实时字幕体验，停止录音后调云端 ASR 做一次高精度转写并替换初稿。**阶段性**方案，供应商后定。
+## 🆕 v0.14.0 第一批（2026-08-12）· hybrid ASR 模式层 ✅
+> 完整方案见 CHANGELOG [0.14.0]。**本批不含任何录音代码**，功能 dark launch（默认「仅浏览器转写」）。
 
-- [ ] **链路**：点录音 → Web Speech 出实时字幕 ＋ MediaRecorder 同步录压缩音频 → 停止 → 「正在优化转写…」→ POST `/api/transcribe` → 云 ASR 返回高精度文本 → 替换初稿 → 用户检查/编辑/提交
-- [ ] **供应商适配层**：`ASR_PROVIDER` 环境变量切换（`mock` 本地/CI 验收 · `openai` 仅内部测试 · 最终供应商后补）。**不把 OpenAI 写死进产品架构**
-- [ ] **热词**：从简历、JD、当前题目提取短词表作为 ASR 热词/提示词（React / TypeScript / CRDT / GMV / ROI / 字节跳动 …）
-- [ ] **双模式 + 首次授权弹窗**：「高准确转写」与「仅浏览器转写」；进面试页前弹一次产品自己的模式选择说明，选完记住、面试页留低干扰的「语音设置」入口可切换。**产品弹窗与浏览器权限弹窗必须分开**——不要在产品弹窗里调 `getUserMedia()`
-  - 默认值分两阶段：供应商与隐私条款未确认前**默认「仅浏览器转写」**；云 ASR 完成准确率/稳定性/隐私验证后，弹窗中预选「高准确转写（推荐）」
-- [ ] **音频处理**：只在内存中暂存，转写完成或失败后立即丢弃；不落对象存储/数据库/日志，不缓存请求体，不把音频或转写原文写进错误监控；超时、取消、切题、报错时同样释放；限制单段时长与大小
-  - ⚠️ **必须显式设 `audioBitsPerSecond`（建议 16000）**：MediaRecorder 用浏览器默认码率（webm/opus 约 128kbps）时，最长那条 257 秒的回答约 4.1MB，会贴上 Vercel 4.5MB 的请求体上限；16kbps 下同样长度只有约 514KB
-- [ ] **隐私页与弹窗文案改写**：现有「不录制、不上传你的音频」必须改。**两方都要写明**——浏览器转写时音频由浏览器内置服务（如 Chrome 的 Google 识别）处理；高准确模式在此基础上额外发一份给高精度识别服务
-- [ ] **埋点（5 项指标 + 转写评分 UI）**：`asrUpgradeDistance`（Web Speech 初稿 → 云 ASR 的编辑距离，证明升级值不值）、`userEditDistance`（云 ASR → 用户提交，证明够不够好）、`transcribeLatencyMs`、`transcribeFailed` / 降级率、`userEdited` 布尔值，加一个「这次转写准不准？」的 👍/👎（`transcript_rated`）。**只传数字，绝不传文本**
-- [ ] **上线后重测面试时长**——当前 71 分钟的中位数是在旧 ASR 下跑出来的，ASR 改完再测一轮，届时再定要不要动面试长度（快速模式 / 减少题数）
+- [x] **删死代码** `VoiceRecorder.tsx` + `useVoiceRecorder.ts`（273 行，单独提交）
+- [x] **纯函数库**：`asr/limits.ts`（码率 24kbps、单段 300s）、`asr/types.ts`、`textDistance.ts`（含归一化，防标点差异伪造升级量）、`asr/hints.ts`、`voiceMode.ts`
+- [x] **供应商适配层** `ASR_PROVIDER`（mock / openai / 后补），未知值降级不抛错
+- [x] **`/api/transcribe`** POST（校验阶梯 7 级 + 严格日志纪律 + 内存纪律）与 GET 能力探测
+- [x] **双模式弹窗 +「语音设置」芯片**，产品弹窗与浏览器权限弹窗严格分离
+- [x] **隐私文案改写**（两种模式都说清楚）+ 第三方服务清单补齐
+- [x] **移动端探测点**：`landed` 加 `mediaRecorder` / `webSpeech`
+- [x] 埋点 `voice_mode_dialog_shown` / `voice_mode_selected`
+
+## 🔜 v0.14.0 第二批 · 录音链路 —— 待实现
+
+- [ ] **`lib/voice/capture.ts`**：MediaRecorder 封装，**只允许动态 `import()`**（浏览器模式下该 chunk 根本不该被下载，这是结构性保证而非一个 if）。`audioBitsPerSecond` 显式设 24000。**每条退出路径都必须释放 track**，否则 Chrome 录音指示灯在停止后仍亮着——配上新的隐私文案，那是信任 bug
+- [ ] **`hooks/useAnswerAudio.ts`**：`phase: idle|recording|stopping|transcribing`，`start/finish/discard/cancelUpgrade`。**六条 `recording→false` 路径只有「用户主动点停止」该触发云端转写**，其余五条（切题、追问到达、识别错误×3、重新作答、边录边交）必须丢弃音频——所以**不能挂在 `useEffect [recording]` 的 cleanup 上**。token + generation 双保险防止迟到的 `setTranscript` 落到下一题
+- [ ] **规则 A（必须实现）**：触顶的段**绝不替换初稿**。录音器 300s 硬停而用户说了 320s 时，云端只转写了前 300s，替换会静默删掉最后 20 秒
+- [ ] **规则 B（必须实现）**：多段回答只替换尾部（`preSegmentRef + cloudText`，不是 `cloudText`）
+- [ ] **可疑短结果保护**：`draftLen > 40 && cloudLen < draftLen * 0.5` → 保留初稿
+- [ ] **边录边交**：弹一次确认，继续则丢弃音频、埋点标 `upgradeStatus:"skipped"` 使采样偏差可见
+- [ ] **三处 UI 冲突**：`isUpgrading` 分支插在粘性的 `speechError` **之上**；「可直接编辑」徽章改用 `isEditable` 统一驱动；文本框用 `readOnly` 而非 `disabled`（保持可选中、不抢焦点、DOM 稳定）
+- [ ] **埋点**：`asrUpgradeDistance` / `userEditDistance`（各含归一化版）、`transcribeLatencyMs`、`transcribeFailed` + 降级率、`userEdited`、`transcript_rated` 👍/👎（**只在云端真的改动了转写时才问**）。`userEditDistance` 只在 `segmentCount===1 && upgraded` 时上报，否则会被升级后追加的口述污染
+- [ ] ⚠️ **码率实测**：24kbps 是暂定值。整个商业理由建立在 `asrUpgradeCoreDistance` 显著为正上，码率过低会让你测到的是自己的压缩损失而非供应商质量。同一段带英文词的中文录音跑 16/24/32 过真实供应商再锁定
+- [ ] ⚠️ **成本无硬上限**：`rateLimit` 是尽力而为的内存实现、冷启动即重置。对按音频秒数计费的路由是花钱风险。启用付费供应商前要么上共享存储（Upstash/Vercel KV），要么加日计数
+- [ ] **上线后重测面试时长**——71 分钟的中位数是旧 ASR 下的，改完再测一轮，届时再定要不要动面试长度
 
 ## 🟡 已确认但本轮未做
 
