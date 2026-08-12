@@ -60,7 +60,7 @@ export const SAMPLE_PERSONAS: SamplePersona[] = [
   {
     key: "tech",
     label: "技术岗",
-    candidate: "张一鸣 · 前端工程师 · 3 年经验",
+    candidate: "张同学 · 前端工程师 · 3 年经验",
     target: "资深前端工程师 · 上海",
     blurb: "简历里写了「FCP 从 2.8s 降到 0.9s」和「基于 CRDT 实现协作冲突消解」，AI 就围绕这两处追着问细节与权衡。",
     threads: [
@@ -264,7 +264,7 @@ export const SAMPLE_PERSONAS: SamplePersona[] = [
   {
     key: "marketing",
     label: "市场营销",
-    candidate: "林知微 · 品牌营销 · 4 年经验",
+    candidate: "林同学 · 品牌营销 · 4 年经验",
     target: "高级品牌营销经理 · 上海 · 新消费",
     blurb: "同一套系统，换成营销岗后问的是预算分配逻辑、内容健康度阈值和 KOL 取舍——不会拿技术问题为难你。",
     threads: [
