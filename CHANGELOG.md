@@ -25,6 +25,9 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - `userEditDistance` **只在 `segmentCount===1 && upgraded` 时上报**：多段回答里升级后又口述追加的内容会被算成「编辑」，正好污染那个本该证明「转写够不够好」的数字。`segmentCount` 永远上报，使这个过滤在 SQL 里可见。
 
 ### Fixed
+- **「话音刚落就点停止」会把尾巴复制一遍**（真机实练发现）—— 停止时手动做了 `setTranscript(transcript + interimTranscript)`，但 `recognition.stop()` 之后 Chrome 会把待定音频**最终化并再发一次 `onresult(isFinal)`**，`onresult` 自己也会追加，于是同一段话进去两次（实测约 120 字重复）。等文字定稿再停就没事——正是这个复现条件指出了根因。原注释写的「停止会丢词」是错的：Chrome 不丢，它会补发。
+  - 第一版修法（轮询等文本不再变化）**更糟且已废弃**：第一次比较可能平凡成立（最终化尚未到达时 `now === last`），于是拿短稿返回、升级结果把尾巴**覆盖删掉**。实测轨迹 `t≈2.0s "AAABBB"` → `t≈3.0s "AAA"`。重复只是难看，删字是真丢用户内容。
+  - 最终版：不猜时间，**等 Web Speech 自己的 `onend`**（它在最终化之后才触发），其后仅做短轮询覆盖 React 提交延迟，另加 2 秒兜底防止个别引擎不报 end。定时器分不清「已完成」和「还没开始」，`onend` 分得清。
 - **触顶结果被静默吞掉** —— 录音器自行硬停时 `onstop` 在没有等待者的情况下算出结果，`resolveStop` 还是 null，结果直接丢失；用户随后点停止只会拿到 `aborted`。初稿仍然安全，但**整个触顶情形不产生任何埋点、也不给用户任何解释**，等于不可见。现在把结果先寄存，`stop()` 到达时交付。实测修复后 `transcribe_failed(capped)` 与「本段较长…」提示都正确出现。
 - **`upgradeStatus` 上报成 `none` 而非 `skipped`** —— 边录边交时 `setUpgradeStatus("skipped")` 是异步的，同一次调用里的 `track()` 读到的仍是旧闭包值。改为本地变量。这个标签存在的唯一目的就是让这类采样偏差可见，报错了等于没埋。
 - **提交按钮把 MouseEvent 当成 `skipUpgradeConfirmed` 传入** —— 事件对象为真值，**每次点击都会跳过确认弹窗**。由 `next build` 的类型检查拦下。
@@ -43,8 +46,12 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - 规则 A：临时把上限调到 4 秒并录 5 秒，初稿保留、未被替换、提示出现、埋点为 `capped`。
   - 优化中：状态行「正在处理录音…」、文本框 `readOnly`、提交按钮禁用、「优化中」徽章四者同时成立。
   - 评分 UI 仅在 mutate 生效（云端真改动）时出现，点击后消失，事件只含数字。
+- **真机实练（Chrome，真实麦克风）确认两项此前只能"已知并接受"的风险**：
+  - **两路麦克风流并发不影响 Web Speech。** 同一段话在两种模式下各录一遍，**实时字幕的出字速度与连贯性一致**——MediaRecorder 与 Web Speech 同时持流没有让 Chrome 降级识别。这是整个设计里最大的架构不确定性，现已排除。
+  - **麦克风在两种模式下都正确释放**，停止后标签页录音红点均熄灭。此前只验过 mock 里我自己写的假 track，真实 `MediaStreamTrack.stop()` 的行为到此才算确认。
 
 ### Notes
+- **`mock` 供应商原样回声，所以两种模式下最终文字完全相同**——转写准确率的对照在原理上还做不了，得等接入真实供应商。现阶段能对照的只有字幕手感、等待时长与麦克风释放（均已实测）。
 - **码率 24kbps 仍是暂定值。** 整个商业理由建立在 `asrUpgradeCoreDistance` 显著为正上；码率过低会让你测到的是自己的压缩损失而非供应商质量。接真实供应商前须用同一段带英文词的中文录音跑 16/24/32 对比再锁定。
 - **成本没有硬上限。** `lib/rateLimit.ts` 是尽力而为的内存实现、冷启动即重置、serverless 下每实例一份。对按音频秒数计费的路由是花钱风险，启用付费供应商前要上共享存储或加日计数。
 

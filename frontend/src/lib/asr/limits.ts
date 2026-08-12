@@ -81,3 +81,14 @@ export const RATIO_GUARD_MIN_DRAFT_LEN = 40;
 export const CLIENT_TRANSCRIBE_TIMEOUT_MS = 20_000;
 export const SERVER_PROVIDER_TIMEOUT_MS = 18_000;
 export const CAPABILITY_TIMEOUT_MS = 3_000;
+
+/**
+ * Polling used to detect that Web Speech has finished flushing its last result
+ * after stop(). Typical settle is two ticks; the cap bounds the wait when the
+ * finalisation never arrives at all.
+ */
+export const SETTLE_TICK_MS = 120;
+export const SETTLE_MAX_TICKS = 6;
+
+/** Fallback if `onend` never arrives — never block the upgrade forever on it. */
+export const SPEECH_END_CAP_MS = 2_000;

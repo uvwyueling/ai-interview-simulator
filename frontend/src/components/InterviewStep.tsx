@@ -11,7 +11,13 @@ import { getAsrCapability } from "@/lib/asrCapability";
 import { useAnswerAudio, type DiscardReason } from "@/hooks/useAnswerAudio";
 import { extractHints } from "@/lib/asr/hints";
 import { distancePair } from "@/lib/textDistance";
-import { MIN_CLOUD_DRAFT_RATIO, RATIO_GUARD_MIN_DRAFT_LEN } from "@/lib/asr/limits";
+import {
+  MIN_CLOUD_DRAFT_RATIO,
+  RATIO_GUARD_MIN_DRAFT_LEN,
+  SETTLE_MAX_TICKS,
+  SETTLE_TICK_MS,
+  SPEECH_END_CAP_MS,
+} from "@/lib/asr/limits";
 
 const MAX_FOLLOWUPS = 3;
 // Consecutive `network` errors (no successful transcript in between) tolerated
@@ -197,6 +203,10 @@ export default function InterviewStep() {
   const upgradedTextRef = useRef<string | null>(null);
   /** Segments recorded for this answer. >1 makes userEditDistance uninterpretable. */
   const segmentCountRef = useRef(0);
+  /** Mirrors `transcript` so async code can read the CURRENT value, not a closure. */
+  const transcriptRef = useRef("");
+  /** Resolved by recognition.onend, so the upgrade can wait for the real flush. */
+  const speechEndedRef = useRef<(() => void) | null>(null);
 
   // Derived question
   const mainQ = questions[currentMainIndex];
@@ -366,6 +376,10 @@ export default function InterviewStep() {
     // blowup). Silently restart while the user still intends to record; the
     // identity check skips restart after an explicit stop / question change.
     recognition.onend = () => {
+      // Before the identity check: a pending upgrade needs to know the engine has
+      // flushed its last result, and on an explicit stop the ref is already null.
+      speechEndedRef.current?.();
+      speechEndedRef.current = null;
       if (recognitionRef.current !== recognition) return; // stopped or superseded
       track(EVENTS.MIC_AUTO_RESTART, {
         mainIndex: currentMainIndex,
@@ -475,13 +489,53 @@ export default function InterviewStep() {
     [resume, jd, currentQuestion.text]
   );
 
+  useEffect(() => {
+    transcriptRef.current = transcript;
+  }, [transcript]);
+
+  /**
+   * Read the transcript only once Web Speech has actually finished with it.
+   *
+   * `recognition.stop()` does NOT drop pending audio: Chrome finalises it, fires
+   * one more `onresult` (which the handler appends to `transcript`), and only
+   * then fires `onend`. So the value readable on the stop click is not yet the
+   * whole answer.
+   *
+   * Two wrong versions were shipped past before this one, and both are worth
+   * naming because they fail in opposite directions:
+   *   1. Appending `interimTranscript` manually at stop — the real final result
+   *      then lands on top and the tail appears TWICE (~120 chars duplicated in
+   *      a live run).
+   *   2. Polling until the value stops changing — the FIRST comparison
+   *      trivially succeeds when the finalisation hasn't arrived yet, so it
+   *      returns the short draft and the upgrade then overwrites the tail. That
+   *      one DELETES the user's words, which is far worse.
+   *
+   * Timers can't tell "finished" from "hasn't started". `onend` can, so wait for
+   * that; the short poll afterwards only covers React's commit lag, by which
+   * point the result is already delivered.
+   */
+  async function settledTranscript(ended: Promise<void>): Promise<string> {
+    await ended;
+    let last = transcriptRef.current;
+    for (let i = 0; i < SETTLE_MAX_TICKS; i++) {
+      await new Promise((r) => setTimeout(r, SETTLE_TICK_MS));
+      const now = transcriptRef.current;
+      if (now === last) return now;
+      last = now;
+    }
+    return transcriptRef.current;
+  }
+
   /**
    * Runs after the user presses stop. Everything here is written so that a
    * failure LEAVES THE DRAFT ALONE — the Web Speech text is already what the
    * user said; a bad upgrade is strictly worse than no upgrade.
    */
-  async function runUpgrade(draftFull: string) {
+  async function runUpgrade(ended: Promise<void>) {
     const base = preSegmentRef.current;
+    // Read AFTER Web Speech has finished flushing — see settledTranscript().
+    const draftFull = await settledTranscript(ended);
     const segmentDraft = draftFull.slice(base.length);
     const token = `${currentQuestion.id}:${segmentCountRef.current}`;
 
@@ -578,13 +632,20 @@ export default function InterviewStep() {
       thinkingTimeMsRef.current = Date.now() - questionStartRef.current;
     }
     if (recording) {
-      // Commit the in-flight hypothesis BEFORE anything else: stopping used to
-      // drop trailing un-finalized words, and "the draft" has to be a settled
-      // string for asrUpgradeDistance to mean anything.
-      const draftFull = transcript + interimTranscript;
-      setTranscript(draftFull);
-      setInterimTranscript("");
-      void runUpgrade(draftFull);
+      // Do NOT commit interimTranscript here. Web Speech finalises it on stop()
+      // and the onresult handler appends it itself; doing it manually as well
+      // duplicates the tail of the answer. Hand runUpgrade a promise that
+      // resolves on onend so it reads the transcript only once it's complete.
+      // The cap covers an engine that never reports end at all.
+      const ended = new Promise<void>((resolve) => {
+        const done = () => {
+          clearTimeout(t);
+          resolve();
+        };
+        const t = setTimeout(done, SPEECH_END_CAP_MS);
+        speechEndedRef.current = done;
+      });
+      void runUpgrade(ended);
     } else {
       // About to call recognition.start() (via the effect on `recording`).
       // Anchor the timestamp here so onstart can compute the popup-hesitation
