@@ -32,6 +32,10 @@ export const EVENTS = {
   // ── Speech mode (v0.14.0) ──────────────────────────────────────────────────
   VOICE_MODE_DIALOG_SHOWN: "voice_mode_dialog_shown", // props: source (first_run|settings), cloudAvailable
   VOICE_MODE_SELECTED: "voice_mode_selected", // props: mode, source, cloudAvailable, wasDefault — measures opt-in rate for uploading audio
+  TRANSCRIBE_STARTED: "transcribe_started", // denominator for the failure rate
+  TRANSCRIBE_COMPLETED: "transcribe_completed", // carries asrUpgradeDistance (+Core) — whether paying for the upgrade is justified
+  TRANSCRIBE_FAILED: "transcribe_failed", // carries `reason`; every one of these left the browser draft in place
+  TRANSCRIPT_RATED: "transcript_rated", // 👍/👎, asked only when the cloud actually changed the text
   ANSWER_SUBMITTED: "answer_submitted",
   FOLLOWUP_TRIGGERED: "followup_triggered",
   FOLLOWUP_DEGRADED: "followup_degraded", // followup API failed → advanced without it

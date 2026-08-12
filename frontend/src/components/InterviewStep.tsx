@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import type { Answer, Exchange, Question } from "@/types/interview";
 import { useInterview } from "@/context/InterviewContext";
 import { track, EVENTS } from "@/lib/analytics";
@@ -8,6 +8,10 @@ import { fetchWithTimeout, isTimeoutError } from "@/lib/fetchWithTimeout";
 import VoiceModeDialog from "./VoiceModeDialog";
 import { DEFAULT_VOICE_MODE, readVoiceMode, writeVoiceMode, type VoiceMode } from "@/lib/voiceMode";
 import { getAsrCapability } from "@/lib/asrCapability";
+import { useAnswerAudio, type DiscardReason } from "@/hooks/useAnswerAudio";
+import { extractHints } from "@/lib/asr/hints";
+import { distancePair } from "@/lib/textDistance";
+import { MIN_CLOUD_DRAFT_RATIO, RATIO_GUARD_MIN_DRAFT_LEN } from "@/lib/asr/limits";
 
 const MAX_FOLLOWUPS = 3;
 // Consecutive `network` errors (no successful transcript in between) tolerated
@@ -135,6 +139,8 @@ export default function InterviewStep() {
     isDemo,
     jd,
     resume,
+    ratings,
+    setRating,
     appendExchange,
     setIsJudging,
     setPendingFollowUp,
@@ -150,6 +156,10 @@ export default function InterviewStep() {
   const [voiceDialogOpen, setVoiceDialogOpen] = useState(false);
   const [voiceDialogSource, setVoiceDialogSource] = useState<"first_run" | "settings">("first_run");
   const [cloudAvailable, setCloudAvailable] = useState(false);
+  /** Non-sticky, unlike speechError — cleared on every new segment and question. */
+  const [transcribeNotice, setTranscribeNotice] = useState("");
+  const [upgradeStatus, setUpgradeStatus] = useState<"none" | "upgraded" | "failed" | "skipped">("none");
+  const [confirmSubmitWhileRecording, setConfirmSubmitWhileRecording] = useState(false);
   const [recording, setRecording] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [interimTranscript, setInterimTranscript] = useState("");
@@ -180,11 +190,23 @@ export default function InterviewStep() {
   // successful transcript in between so a truly-down connection surfaces an
   // actionable error instead of looping. Reset on new transcript / fresh click.
   const networkRetryRef = useRef(0);
+  // ── Cloud upgrade bookkeeping (v0.14.0) ──
+  /** `transcript` as it stood when THIS segment started recording (Rule B). */
+  const preSegmentRef = useRef("");
+  /** Full transcript right after a successful upgrade — the baseline for userEditDistance. */
+  const upgradedTextRef = useRef<string | null>(null);
+  /** Segments recorded for this answer. >1 makes userEditDistance uninterpretable. */
+  const segmentCountRef = useRef(0);
 
   // Derived question
   const mainQ = questions[currentMainIndex];
   const isFollowUp = pendingFollowUpQuestion !== null;
   const followUpDepth = currentExchanges.length; // 0 = answering main Q; 1+ = answering follow-up N
+
+  // Demo never uploads: it would spend money on fixtures and yield no real
+  // metrics. Capability comes from the server, never a build-time flag.
+  const audio = useAnswerAudio({ enabled: !isDemo && voiceMode === "cloud" && cloudAvailable });
+  const isUpgrading = audio.phase === "stopping" || audio.phase === "transcribing";
 
   const currentQuestion: Question = isFollowUp
     ? {
@@ -243,6 +265,8 @@ export default function InterviewStep() {
     asrCharsRef.current = 0;
     grantedFiredRef.current = false;
     networkRetryRef.current = 0;
+    resetUpgradeState("question_change");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentMainIndex]);
 
   // Also reset when a follow-up question arrives (pendingFollowUpQuestion becomes non-null)
@@ -257,7 +281,9 @@ export default function InterviewStep() {
       asrCharsRef.current = 0;
       grantedFiredRef.current = false;
       networkRetryRef.current = 0;
+      resetUpgradeState("followup");
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingFollowUpQuestion]);
 
   // ── Auto-scroll live transcript ──
@@ -351,6 +377,7 @@ export default function InterviewStep() {
         // start() can throw if called too eagerly — bail out cleanly rather than
         // spin. recording=false triggers the cleanup below.
         recognitionRef.current = null;
+        audio.discard("recognition_error"); // not a user stop → the audio is junk
         setRecording(false);
       }
     };
@@ -390,6 +417,7 @@ export default function InterviewStep() {
             setSpeechError(
               "网络不稳定导致语音识别中断，请检查网络后重试，或改用键盘输入。"
             );
+            audio.discard("recognition_error");
             setRecording(false);
             return;
           }
@@ -416,6 +444,7 @@ export default function InterviewStep() {
         setSpeechError("语音识别出错，请重试");
       }
       micPromptAtRef.current = null;
+      audio.discard("recognition_error");
       setRecording(false);
     };
 
@@ -431,12 +460,131 @@ export default function InterviewStep() {
 
   // ── Handlers ──
 
+  /** Every abort path funnels here: drop the audio and forget this answer's upgrade. */
+  function resetUpgradeState(reason: DiscardReason) {
+    audio.discard(reason);
+    preSegmentRef.current = "";
+    upgradedTextRef.current = null;
+    segmentCountRef.current = 0;
+    setTranscribeNotice("");
+    setUpgradeStatus("none");
+  }
+
+  const hints = useMemo(
+    () => extractHints(resume, jd, currentQuestion.text),
+    [resume, jd, currentQuestion.text]
+  );
+
+  /**
+   * Runs after the user presses stop. Everything here is written so that a
+   * failure LEAVES THE DRAFT ALONE — the Web Speech text is already what the
+   * user said; a bad upgrade is strictly worse than no upgrade.
+   */
+  async function runUpgrade(draftFull: string) {
+    const base = preSegmentRef.current;
+    const segmentDraft = draftFull.slice(base.length);
+    const token = `${currentQuestion.id}:${segmentCountRef.current}`;
+
+    track(EVENTS.TRANSCRIBE_STARTED, {
+      mainIndex: currentMainIndex,
+      depth: currentExchanges.length,
+      mode: voiceMode,
+      draftLen: segmentDraft.replace(/\s/g, "").length,
+      hintCount: hints.length,
+      isDemo,
+    });
+
+    const outcome = await audio.finish({ draft: segmentDraft, hints });
+
+    // A discard raced us — the answer this belonged to is gone.
+    if (outcome.status === "abandoned") return;
+    if (token !== `${currentQuestion.id}:${segmentCountRef.current}`) return;
+
+    if (outcome.status === "skipped") {
+      setUpgradeStatus("skipped");
+      return;
+    }
+
+    if (outcome.status === "failed") {
+      setUpgradeStatus("failed");
+      // RULE A lives here: `capped` means the recording hit a hard limit, so the
+      // cloud only ever saw PART of the answer. Falling back is not a
+      // degradation, it's the only correct choice.
+      setTranscribeNotice(
+        outcome.reason === "capped"
+          ? "本段较长，已保留浏览器转写结果。"
+          : outcome.reason === "user_skip"
+            ? ""
+            : "优化转写未成功，已保留浏览器转写结果。"
+      );
+      track(EVENTS.TRANSCRIBE_FAILED, {
+        mainIndex: currentMainIndex,
+        depth: currentExchanges.length,
+        mode: voiceMode,
+        reason: outcome.reason,
+        transcribeLatencyMs: outcome.latencyMs,
+        draftLen: segmentDraft.replace(/\s/g, "").length,
+      });
+      return;
+    }
+
+    // Suspiciously short result — a truncated transcript would wipe most of the
+    // answer. Rejecting the odd terse-but-correct one is the cheaper mistake.
+    const draftLen = segmentDraft.replace(/\s/g, "").length;
+    const cloudLen = outcome.text.replace(/\s/g, "").length;
+    if (draftLen > RATIO_GUARD_MIN_DRAFT_LEN && cloudLen < draftLen * MIN_CLOUD_DRAFT_RATIO) {
+      setUpgradeStatus("failed");
+      setTranscribeNotice("优化转写结果异常，已保留浏览器转写结果。");
+      track(EVENTS.TRANSCRIBE_FAILED, {
+        mainIndex: currentMainIndex,
+        depth: currentExchanges.length,
+        mode: voiceMode,
+        reason: "suspicious_short",
+        transcribeLatencyMs: outcome.latencyMs,
+        draftLen,
+        cloudLen,
+      });
+      return;
+    }
+
+    // RULE B: replace only THIS segment's tail. A multi-segment answer keeps
+    // everything dictated before recording restarted.
+    const merged = base + outcome.text;
+    setTranscript(merged);
+    upgradedTextRef.current = merged;
+    setUpgradeStatus("upgraded");
+    setTranscribeNotice("");
+
+    const d = distancePair(segmentDraft, outcome.text);
+    track(EVENTS.TRANSCRIBE_COMPLETED, {
+      mainIndex: currentMainIndex,
+      depth: currentExchanges.length,
+      mode: voiceMode,
+      transcribeLatencyMs: outcome.latencyMs,
+      durationSec: Math.round(outcome.durationMs / 1000),
+      audioBytes: outcome.bytes,
+      draftLen,
+      cloudLen,
+      hintCount: hints.length,
+      asrUpgradeDistance: d.raw,
+      asrUpgradeCoreDistance: d.core,
+      providerClass: outcome.providerClass,
+      isDemo,
+    });
+  }
+
   const toggleRec = () => {
     if (!recording && thinkingTimeMsRef.current === 0) {
       thinkingTimeMsRef.current = Date.now() - questionStartRef.current;
     }
     if (recording) {
+      // Commit the in-flight hypothesis BEFORE anything else: stopping used to
+      // drop trailing un-finalized words, and "the draft" has to be a settled
+      // string for asrUpgradeDistance to mean anything.
+      const draftFull = transcript + interimTranscript;
+      setTranscript(draftFull);
       setInterimTranscript("");
+      void runUpgrade(draftFull);
     } else {
       // About to call recognition.start() (via the effect on `recording`).
       // Anchor the timestamp here so onstart can compute the popup-hesitation
@@ -446,6 +594,11 @@ export default function InterviewStep() {
       grantedFiredRef.current = false;
       networkRetryRef.current = 0; // fresh attempt → clear any prior network streak
       micPromptAtRef.current = Date.now();
+      // Anchor Rule B and start capturing alongside Web Speech.
+      preSegmentRef.current = transcript;
+      segmentCountRef.current += 1;
+      setTranscribeNotice("");
+      audio.start();
       track(EVENTS.MIC_PROMPT_SHOWN, {
         mainIndex: currentMainIndex,
         depth: currentExchanges.length,
@@ -462,6 +615,13 @@ export default function InterviewStep() {
     questionStartRef.current = Date.now();
     thinkingTimeMsRef.current = 0;
     asrCharsRef.current = 0;
+    // Bring this in line with the question-change effect, which always reset
+    // these three; resetAnswer silently didn't, so a stale error or retry streak
+    // survived 重新作答.
+    setSpeechError("");
+    grantedFiredRef.current = false;
+    networkRetryRef.current = 0;
+    resetUpgradeState("reset");
   };
 
   // Ask the LLM whether to follow up on the given exchanges. Extracted so it can
@@ -562,12 +722,33 @@ export default function InterviewStep() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleSubmit = async () => {
+  /** `skipUpgradeConfirmed` is passed explicitly rather than read from state —
+   *  relying on a stale closure to know the user already answered the prompt is
+   *  the kind of thing that breaks the next time this function is touched. */
+  const handleSubmit = async (skipUpgradeConfirmed = false) => {
     const text = (transcript + interimTranscript).trim();
     if (!text || isJudging) return;
+    // Defence in depth behind the disabled button — never submit mid-upgrade,
+    // or the answer stored would be the draft the cloud is about to replace.
+    if (isUpgrading) return;
+
+    // Tracked locally, not read back from state: setUpgradeStatus below wouldn't
+    // be visible to the track() call in this same invocation, so the event would
+    // report "none" for exactly the case the tag exists to make visible.
+    let effectiveUpgradeStatus = upgradeStatus;
 
     if (recording) {
+      // Submitting while still recording means the cloud pass never happens.
+      // Ask once rather than silently handing them a worse transcript.
+      if (!skipUpgradeConfirmed && audio.phase === "recording") {
+        setConfirmSubmitWhileRecording(true);
+        return;
+      }
+      setConfirmSubmitWhileRecording(false);
       recognitionRef.current?.stop();
+      audio.discard("submit_while_recording");
+      effectiveUpgradeStatus = "skipped";
+      setUpgradeStatus("skipped");
       setRecording(false);
     }
 
@@ -580,6 +761,14 @@ export default function InterviewStep() {
     const exchange: Exchange = { question: currentQuestion, answer };
     const newExchanges = [...currentExchanges, exchange];
 
+    // How much the user still had to fix AFTER the cloud pass — the number that
+    // says whether the upgrade is good enough. Reported only for single-segment
+    // answers: in a multi-segment answer, speech dictated after an upgrade would
+    // count as "edits" and contaminate exactly this metric. segmentCount always
+    // ships so the filter is visible in SQL.
+    const singleSegment = segmentCountRef.current === 1 && upgradedTextRef.current !== null;
+    const userEdit = singleSegment ? distancePair(upgradedTextRef.current!, text) : null;
+
     track(EVENTS.ANSWER_SUBMITTED, {
       mainIndex: currentMainIndex,
       isFollowUp,
@@ -588,6 +777,17 @@ export default function InterviewStep() {
       answerLen: text.replace(/\s/g, "").length, // length only — never the content
       asrChars: asrCharsRef.current, // chars from voice → 转写编辑率 = 1 - asrChars/answerLen
       isDemo,
+      voiceMode,
+      upgradeStatus: effectiveUpgradeStatus,
+      segmentCount: segmentCountRef.current,
+      ...(userEdit
+        ? {
+            userEditDistance: userEdit.raw,
+            userEditCoreDistance: userEdit.core,
+            userEdited: (userEdit.core ?? 0) > 0,
+            postAsrLen: upgradedTextRef.current!.replace(/\s/g, "").length,
+          }
+        : {}),
     });
 
     // Update context history immediately (for display)
@@ -603,6 +803,7 @@ export default function InterviewStep() {
     questionStartRef.current = Date.now();
     thinkingTimeMsRef.current = 0;
     asrCharsRef.current = 0;
+    resetUpgradeState("submit_while_recording");
 
     // Demo mode or max follow-ups reached → advance directly
     if (isDemo || newExchanges.length > MAX_FOLLOWUPS) {
@@ -622,7 +823,12 @@ export default function InterviewStep() {
   const thinkRing = Math.min(seconds / 120, 1);
 
   const isLastMain = currentMainIndex >= questions.length - 1;
-  const canSubmit = !!fullText.trim() && !isJudging;
+  const canSubmit = !!fullText.trim() && !isJudging && !isUpgrading;
+  /** One derived boolean drives the textarea, the 「可直接编辑」 badge and canSubmit,
+   *  so the three can never disagree about whether the text is settled. */
+  const isEditable = !recording && !isJudging && !isUpgrading;
+  /** `tr:` namespace — FeedbackStep only ever reads its own `fb:` / `fu:` keys. */
+  const transcriptRatingKey = `tr:${currentMainIndex}:${currentExchanges.length}`;
 
   // ── Label helpers ──
 
@@ -877,9 +1083,28 @@ export default function InterviewStep() {
                   </button>
                 </div>
 
+                {/* isUpgrading sits ABOVE speechError deliberately: speechError
+                    is sticky (cleared only when recording restarts), so once the
+                    recording has ended it is by construction stale, while the
+                    machine state is current. Transcribe failures never write to
+                    speechError — they use transcribeNotice, so the two error
+                    channels can't overwrite each other. */}
                 <div className="mt-6 text-[13px] text-slate-500">
                   {!speechSupported ? (
                     <span className="text-amber-600">浏览器不支持语音，请在右侧输入</span>
+                  ) : isUpgrading ? (
+                    <span className="inline-flex items-center gap-2 text-indigo-600">
+                      <span className="w-3 h-3 rounded-full border-2 border-indigo-300 border-t-indigo-600 animate-spin" />
+                      {audio.phase === "stopping" ? "正在处理录音…" : "正在优化转写…"}
+                      {audio.phase === "transcribing" && (
+                        <button
+                          onClick={audio.cancelUpgrade}
+                          className="text-[12px] text-slate-400 hover:text-slate-600 underline underline-offset-2"
+                        >
+                          跳过
+                        </button>
+                      )}
+                    </span>
                   ) : speechError ? (
                     <span className="text-rose-500">{speechError}</span>
                   ) : recording ? (
@@ -900,7 +1125,7 @@ export default function InterviewStep() {
                       setVoiceDialogOpen(true);
                       track(EVENTS.VOICE_MODE_DIALOG_SHOWN, { source: "settings", cloudAvailable });
                     }}
-                    disabled={recording}
+                    disabled={recording || isUpgrading}
                     className="mt-3 inline-flex items-center gap-1.5 text-[11.5px] text-slate-400 hover:text-indigo-600 disabled:opacity-50 disabled:hover:text-slate-400 transition"
                   >
                     <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -987,7 +1212,10 @@ export default function InterviewStep() {
                 重新作答
               </button>
               <button
-                onClick={handleSubmit}
+                // Wrapped, not passed directly: onClick would hand the MouseEvent
+                // to skipUpgradeConfirmed, and an event object is truthy — every
+                // click would silently bypass the confirm.
+                onClick={() => handleSubmit()}
                 disabled={!canSubmit}
                 className={`text-[13px] font-medium px-4 py-2 rounded-lg transition flex items-center gap-1.5 ${
                   canSubmit
@@ -1034,10 +1262,22 @@ export default function InterviewStep() {
                 }`}
               />
               <div className="text-[13px] font-medium">
-                {isJudging ? "AI 判断中" : recording ? "实时语音转文字" : "回答内容"}
+                {isJudging
+                  ? "AI 判断中"
+                  : recording
+                    ? "实时语音转文字"
+                    : isUpgrading
+                      ? "正在优化转写"
+                      : "回答内容"}
               </div>
             </div>
-            {!recording && !isJudging && (
+            {isUpgrading && (
+              <div className="flex items-center gap-1.5 text-[11px] text-indigo-600 font-medium">
+                <span className="w-2.5 h-2.5 rounded-full border-2 border-indigo-200 border-t-indigo-600 animate-spin" />
+                优化中
+              </div>
+            )}
+            {isEditable && (
               <div className="flex items-center gap-1 text-[11px] text-emerald-600 font-medium">
                 <svg
                   viewBox="0 0 24 24"
@@ -1125,16 +1365,71 @@ export default function InterviewStep() {
               )}
             </div>
           ) : (
+            /* readOnly, NOT disabled, while upgrading: the text stays selectable
+               and copyable, focus isn't stolen, and the DOM node is stable so the
+               value swap happens in place instead of remounting and jumping the
+               scroll position. */
             <textarea
               value={transcript}
               onChange={(e) => setTranscript(e.target.value)}
+              readOnly={isUpgrading}
+              aria-busy={isUpgrading}
               placeholder={
                 currentExchanges.length > 0
                   ? "在此输入对追问的回答…"
                   : "点击左侧麦克风开始录音，或直接在此输入回答…"
               }
-              className="flex-1 scroll resize-none bg-slate-50/60 rounded-xl p-5 text-[14px] leading-[1.85] text-slate-700 placeholder-slate-300 outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500/40 transition min-h-[200px] max-h-[360px]"
+              className={`flex-1 scroll resize-none rounded-xl p-5 text-[14px] leading-[1.85] text-slate-700 placeholder-slate-300 outline-none transition min-h-[200px] max-h-[360px] ${
+                isUpgrading
+                  ? "bg-slate-100 cursor-default"
+                  : "bg-slate-50/60 focus:bg-white focus:ring-2 focus:ring-indigo-500/40"
+              }`}
             />
+          )}
+
+          {/* Transcribe outcome — a channel of its own, kept physically separate
+              from the sticky speechError so neither can clobber the other. */}
+          {transcribeNotice && isEditable && (
+            <div className="mt-3 flex items-start gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-[12px] text-amber-800">
+              <span className="flex-1">{transcribeNotice}</span>
+              <button
+                onClick={() => setTranscribeNotice("")}
+                aria-label="关闭提示"
+                className="shrink-0 text-amber-500 hover:text-amber-700"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
+          {/* Only asked when the cloud ACTUALLY changed something — otherwise
+              there is nothing to rate, and 12 prompts an interview is friction.
+              Reuses the context ratings map (tr: prefix) for free persistence and
+              the existing double-count guard; FeedbackStep only reads fb:/fu:. */}
+          {isEditable && upgradeStatus === "upgraded" && !ratings[transcriptRatingKey] && (
+            <div className="mt-3 flex items-center gap-3 px-3 py-2 bg-indigo-50/60 rounded-lg">
+              <span className="text-[12px] text-slate-600">这次转写准不准？</span>
+              {([1, -1] as const).map((v) => (
+                <button
+                  key={v}
+                  onClick={() => {
+                    setRating(transcriptRatingKey, v);
+                    track(EVENTS.TRANSCRIPT_RATED, {
+                      value: v,
+                      mainIndex: currentMainIndex,
+                      depth: currentExchanges.length,
+                      mode: voiceMode,
+                      cloudLen: (upgradedTextRef.current ?? "").replace(/\s/g, "").length,
+                      isDemo,
+                    });
+                  }}
+                  className="text-[14px] hover:scale-110 transition"
+                  aria-label={v === 1 ? "准确" : "不准确"}
+                >
+                  {v === 1 ? "👍" : "👎"}
+                </button>
+              ))}
+            </div>
           )}
 
           {/* Stats */}
@@ -1186,6 +1481,43 @@ export default function InterviewStep() {
           )}
         </div>
       </div>
+
+      {/* Submitting mid-recording means the cloud pass never runs. Asking once
+          beats silently handing them a worse transcript than the one they were
+          about to get; the audio is discarded and the event is tagged `skipped`
+          so this sampling bias stays visible in the data. */}
+      {confirmSubmitWhileRecording && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6" role="dialog" aria-modal="true">
+          <div
+            className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            onClick={() => setConfirmSubmitWhileRecording(false)}
+          />
+          <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl p-6">
+            <div className="text-[15px] font-semibold text-slate-900">还在录音中</div>
+            <p className="mt-2 text-[13px] leading-relaxed text-slate-600">
+              直接提交会跳过「高准确转写」，本题使用浏览器的转写结果。
+              也可以先结束录音，等几秒拿到更准确的文字再提交。
+            </p>
+            <div className="mt-5 flex items-center justify-end gap-3">
+              <button
+                onClick={() => setConfirmSubmitWhileRecording(false)}
+                className="text-[13px] text-slate-500 hover:text-slate-700 px-3 py-2"
+              >
+                返回继续录音
+              </button>
+              <button
+                onClick={() => {
+                  setConfirmSubmitWhileRecording(false);
+                  void handleSubmit(true);
+                }}
+                className="text-[13px] font-medium text-white bg-indigo-600 hover:bg-indigo-700 px-4 py-2.5 rounded-lg transition"
+              >
+                直接提交
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {voiceDialogOpen && (
         <VoiceModeDialog

@@ -37,19 +37,24 @@
 - [x] **移动端探测点**：`landed` 加 `mediaRecorder` / `webSpeech`
 - [x] 埋点 `voice_mode_dialog_shown` / `voice_mode_selected`
 
-## 🔜 v0.14.0 第二批 · 录音链路 —— 待实现
+## 🆕 v0.14.0 第二批（2026-08-12）· 录音链路 ✅
 
-- [ ] **`lib/voice/capture.ts`**：MediaRecorder 封装，**只允许动态 `import()`**（浏览器模式下该 chunk 根本不该被下载，这是结构性保证而非一个 if）。`audioBitsPerSecond` 显式设 24000。**每条退出路径都必须释放 track**，否则 Chrome 录音指示灯在停止后仍亮着——配上新的隐私文案，那是信任 bug
-- [ ] **`hooks/useAnswerAudio.ts`**：`phase: idle|recording|stopping|transcribing`，`start/finish/discard/cancelUpgrade`。**六条 `recording→false` 路径只有「用户主动点停止」该触发云端转写**，其余五条（切题、追问到达、识别错误×3、重新作答、边录边交）必须丢弃音频——所以**不能挂在 `useEffect [recording]` 的 cleanup 上**。token + generation 双保险防止迟到的 `setTranscript` 落到下一题
-- [ ] **规则 A（必须实现）**：触顶的段**绝不替换初稿**。录音器 300s 硬停而用户说了 320s 时，云端只转写了前 300s，替换会静默删掉最后 20 秒
-- [ ] **规则 B（必须实现）**：多段回答只替换尾部（`preSegmentRef + cloudText`，不是 `cloudText`）
-- [ ] **可疑短结果保护**：`draftLen > 40 && cloudLen < draftLen * 0.5` → 保留初稿
-- [ ] **边录边交**：弹一次确认，继续则丢弃音频、埋点标 `upgradeStatus:"skipped"` 使采样偏差可见
-- [ ] **三处 UI 冲突**：`isUpgrading` 分支插在粘性的 `speechError` **之上**；「可直接编辑」徽章改用 `isEditable` 统一驱动；文本框用 `readOnly` 而非 `disabled`（保持可选中、不抢焦点、DOM 稳定）
-- [ ] **埋点**：`asrUpgradeDistance` / `userEditDistance`（各含归一化版）、`transcribeLatencyMs`、`transcribeFailed` + 降级率、`userEdited`、`transcript_rated` 👍/👎（**只在云端真的改动了转写时才问**）。`userEditDistance` 只在 `segmentCount===1 && upgraded` 时上报，否则会被升级后追加的口述污染
-- [ ] ⚠️ **码率实测**：24kbps 是暂定值。整个商业理由建立在 `asrUpgradeCoreDistance` 显著为正上，码率过低会让你测到的是自己的压缩损失而非供应商质量。同一段带英文词的中文录音跑 16/24/32 过真实供应商再锁定
-- [ ] ⚠️ **成本无硬上限**：`rateLimit` 是尽力而为的内存实现、冷启动即重置。对按音频秒数计费的路由是花钱风险。启用付费供应商前要么上共享存储（Upstash/Vercel KV），要么加日计数
-- [ ] **上线后重测面试时长**——71 分钟的中位数是旧 ASR 下的，改完再测一轮，届时再定要不要动面试长度
+- [x] **`lib/voice/capture.ts`** MediaRecorder 封装（只允许动态 import；24kbps 显式设置；每条退出路径释放 track）
+- [x] **`hooks/useAnswerAudio.ts`** 生命周期与六条停止路径；generation + 调用方 token 双保险
+- [x] **规则 A**：触顶不替换初稿 · **规则 B**：多段只替换尾部 · 可疑短结果保护
+- [x] **边录边交确认弹窗**，确认后丢弃音频并标 `upgradeStatus:"skipped"`
+- [x] **三处 UI 冲突**全部解决（isUpgrading 优先于粘性 speechError／isEditable 统一驱动／readOnly 而非 disabled）
+- [x] **埋点四事件 + answer_submitted 扩展**，只出数字；`userEditDistance` 仅单段时上报
+- [x] **转写评分 👍/👎**，仅在云端真改动时出现
+- [x] 修复三个实现 bug：触顶结果被静默吞掉、`upgradeStatus` 报成 `none`、提交按钮把 MouseEvent 当参数传（每次点击都会跳过确认）
+
+## 🔴 v0.14.0 上线前必做
+
+- [ ] ⚠️ **码率实测再锁定** —— 24kbps 是暂定值。整个商业理由建立在 `asrUpgradeCoreDistance` 显著为正上；码率过低会让你测到的是自己的压缩损失而非供应商质量。用同一段带英文词的中文录音跑 16/24/32 过真实供应商再定
+- [ ] ⚠️ **成本硬上限** —— `rateLimit` 是尽力而为的内存实现、冷启动即重置、serverless 每实例一份。对按音频秒数计费的路由是花钱风险。启用付费供应商前要么上共享存储（Upstash/Vercel KV），要么加粗粒度日计数
+- [ ] ⚠️ **翻转默认值前先公布供应商名** —— 现在文案写「高精度识别服务」，这只在默认关闭且需主动开启时站得住。同时把 `echo_voice_mode_v1` 升到 `_v2`，让当初的选择被重新征询而非静默重新解释
+- [ ] **真机走一遍完整面试**（本地验收全程用注入 mock，未经真实麦克风与真实供应商）：确认权限弹窗时序（产品弹窗 → 点麦克风 → 浏览器授权）、录音指示灯在每次停止后熄灭、优化等待时长可接受
+- [ ] **上线后重测面试时长** —— 71 分钟的中位数是旧 ASR 下的，改完再测一轮，届时再定要不要动面试长度（快速模式／减少题数）
 
 ## 🟡 已确认但本轮未做
 

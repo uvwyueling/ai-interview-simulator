@@ -6,6 +6,50 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.14.0] — 2026-08-12 · hybrid ASR 第二批（录音链路）
+
+> 接上一批。录音、上传、替换初稿、指标全部就位。**供应商仍未定**，`ASR_PROVIDER=mock` 下整条链路可跑通且零花费；默认仍是「仅浏览器转写」。
+
+### Added
+- **`lib/voice/capture.ts`** —— MediaRecorder 封装，**只允许动态 `import()`**。浏览器模式下这个 chunk 根本不会被下载——结构性保证，可在 Network 面板核实，比「我们判断了一个布尔值」强得多，而这是一个关于用户音频是否离开本机的模块。
+  - `audioBitsPerSecond: 24000` 显式设置（实测确认生效）。
+  - **每一条退出路径都释放 track**。留着第二路麦克风流会让 Chrome 录音指示灯在用户停止后仍然亮着——配上新的隐私文案，那是信任 bug，不是资源泄漏。
+- **`hooks/useAnswerAudio.ts`** —— 生命周期归属者。`recording→false` 有六条路径，**只有「用户主动点停止」该上传**，其余五条必须丢弃音频，所以不能挂在 `useEffect [recording]` 的 cleanup 上（那条 cleanup 六条都会跑）。`discard()` 幂等且任何 phase 可调用，于是那五处各自只需一行。
+  - generation 计数器 + 调用方自己的 token 校验，**两道基于不同真相源的防护**：一次迟到的 `setTranscript` 落到下一题是这个功能能产生的最坏 bug。
+- **规则 A** —— 触顶的段**绝不替换初稿**。录音器硬停在上限而用户还在说时，云端只拿到了前半段，用它替换会**静默删掉用户后半段回答**。
+- **规则 B** —— 多段回答只替换尾部：`preSegmentRef + cloudText`，不是 `cloudText`。
+- **可疑短结果保护** —— 云端结果短于初稿一半时判为异常并保留初稿。
+- **边录边交确认弹窗** —— 直接提交会跳过高准确转写；确认后丢弃音频并把事件标为 `upgradeStatus:"skipped"`，让这部分采样偏差在数据里可见而非隐形。
+- **转写评分 👍/👎** —— **仅在云端真的改动了转写时出现**。复用 context 既有 `ratings` 的 `tr:` 前缀，白拿刷新持久化与防重复计数，无需改 `InterviewContext`。
+- **埋点**：`transcribe_started` / `transcribe_completed`（含 `asrUpgradeDistance` 与归一化版）/ `transcribe_failed`（12 种 reason）/ `transcript_rated`；`answer_submitted` 扩展 `voiceMode`、`upgradeStatus`、`segmentCount`、`userEditDistance`。**只出数字、枚举、布尔**。
+  - `userEditDistance` **只在 `segmentCount===1 && upgraded` 时上报**：多段回答里升级后又口述追加的内容会被算成「编辑」，正好污染那个本该证明「转写够不够好」的数字。`segmentCount` 永远上报，使这个过滤在 SQL 里可见。
+
+### Fixed
+- **触顶结果被静默吞掉** —— 录音器自行硬停时 `onstop` 在没有等待者的情况下算出结果，`resolveStop` 还是 null，结果直接丢失；用户随后点停止只会拿到 `aborted`。初稿仍然安全，但**整个触顶情形不产生任何埋点、也不给用户任何解释**，等于不可见。现在把结果先寄存，`stop()` 到达时交付。实测修复后 `transcribe_failed(capped)` 与「本段较长…」提示都正确出现。
+- **`upgradeStatus` 上报成 `none` 而非 `skipped`** —— 边录边交时 `setUpgradeStatus("skipped")` 是异步的，同一次调用里的 `track()` 读到的仍是旧闭包值。改为本地变量。这个标签存在的唯一目的就是让这类采样偏差可见，报错了等于没埋。
+- **提交按钮把 MouseEvent 当成 `skipUpgradeConfirmed` 传入** —— 事件对象为真值，**每次点击都会跳过确认弹窗**。由 `next build` 的类型检查拦下。
+- **`resetAnswer` 遗漏三项重置** —— 它不清 `speechError` / `grantedFiredRef` / `networkRetryRef`，与切题 effect 不一致，导致「重新作答」后仍残留过期错误与重试计数。既有缺陷，本次一并补齐。
+
+### Changed
+- 停止录音时**先提交 interim 再上传** —— 原先停止会丢掉尾部未定稿的词（只有「边录边交」路径在 `handleSubmit` 里补偿过）。同时让「初稿」成为一个确定的字符串，`asrUpgradeDistance` 才有意义。
+- **三处 UI 冲突的解法**：`isUpgrading` 分支插在**粘性的 `speechError` 之上**（录音结束后 speechError 按构造已过期，机器状态严格更有信息量；转写失败走独立的 `transcribeNotice`，两个错误通道物理隔离）；「可直接编辑」徽章与文本框与 `canSubmit` 改由**同一个 `isEditable` 驱动**，三者不可能互相矛盾；文本框用 `readOnly` **而非 `disabled`**——文本仍可选中复制、不抢焦点、DOM 节点稳定，值替换就地发生而非重挂载导致滚动跳动。
+
+### Verified
+- `npm run build` 通过，无新增警告。
+- **注入 mock（MediaRecorder / getUserMedia / SpeechRecognition）驱动真实构建产物**，沿用 v0.12.2 的验证方式：
+  - 完整链路：`transcribe_started` → `transcribe_completed`，`asrUpgradeDistance=0`、`providerClass=mock`——mock 原样回声正是链路正确的证据。构造参数实测 `audioBitsPerSecond=24000`、`mimeType=audio/webm;codecs=opus`。
+  - **四条丢弃路径逐条走完，每条之后 `tracksLive` 归零且无 `transcribe_started`**：识别致命错误、重新作答、边录边交、以及停止后的正常释放。
+  - 规则 B：一题内录两段，第二段 `draftLen` 只等于新段长度（证明切片正确），第一段文本在最终结果中完好。
+  - 规则 A：临时把上限调到 4 秒并录 5 秒，初稿保留、未被替换、提示出现、埋点为 `capped`。
+  - 优化中：状态行「正在处理录音…」、文本框 `readOnly`、提交按钮禁用、「优化中」徽章四者同时成立。
+  - 评分 UI 仅在 mutate 生效（云端真改动）时出现，点击后消失，事件只含数字。
+
+### Notes
+- **码率 24kbps 仍是暂定值。** 整个商业理由建立在 `asrUpgradeCoreDistance` 显著为正上；码率过低会让你测到的是自己的压缩损失而非供应商质量。接真实供应商前须用同一段带英文词的中文录音跑 16/24/32 对比再锁定。
+- **成本没有硬上限。** `lib/rateLimit.ts` 是尽力而为的内存实现、冷启动即重置、serverless 下每实例一份。对按音频秒数计费的路由是花钱风险，启用付费供应商前要上共享存储或加日计数。
+
+---
+
 ## [0.14.0] — 2026-08-12 · hybrid ASR 第一批（模式层）
 
 > 目标：Web Speech 保留实时字幕，用户**主动停止**录音后调云端 ASR 做一次高精度转写替换初稿。简历与 JD 是天然术语表，作为热词传给识别服务——中英混排恰恰是词表最能救的那类错误。
