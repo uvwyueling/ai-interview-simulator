@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
 import type { Question, Exchange, QuestionThread, Feedback } from "@/types/interview";
 import { track, EVENTS } from "@/lib/analytics";
+import { reportInterviewCompleted } from "@/lib/gtag";
 
 type Step = "input" | "interview" | "feedback";
 
@@ -250,6 +251,12 @@ export function InterviewProvider({ children }: { children: ReactNode }) {
         isDemo,
         questionCount: questions.length,
       });
+      // Google Ads conversion — but never for a demo run. `isDemo` is NOT a
+      // dev-only flag: InputStep's sample fast-path (untouched sample resume +
+      // JD) sets it in production too. Counting those would train the bidding
+      // algorithm to buy clicks from people who tap the sample and leave
+      // without ever pasting a resume of their own.
+      if (!isDemo) reportInterviewCompleted();
     }
   };
 

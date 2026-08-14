@@ -6,6 +6,33 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.13.2] — 2026-08-14
+
+### Added
+- **Google Ads 转化跟踪（gtag.js，`AW-18389654749`）** —— 准备在 Google Ads 投流，需要广告平台能识别「点击广告 → 访问了站点」。代码加在 `app/layout.tsx`，因此覆盖首页与 `/privacy` 全站
+  - 用 `next/script` 的 `afterInteractive` 策略而非直接写 `<script>`：Google 给的原始片段是 `async` 的，但放进 App Router 的 `<head>` 里会与 Next 的脚本调度打架；`afterInteractive` 保证它在水合后加载，不阻塞首屏
+  - **衡量 ID 直接内联，没走环境变量**。它本来就会明文出现在每个访客的页面源码里，不是密钥；反过来，若托管端漏配环境变量，转化跟踪会静默失效——而这种失效要等广告预算烧完才看得见
+
+- **「完成一次面试」转化上报（`lib/gtag.ts` + `InterviewContext.advanceToNext`）** —— 光有 gtag.js 只能让 Google 看见「有人来过」，看不见「有人用完了」，智能出价没有优化目标
+  - **单独一个模块，不塞进 `lib/analytics.ts`**。那边是我们自己的漏斗（约 25 个事件、富属性、进 Supabase、给人看），这边是卖给 Google 出价算法的唯一一个高价值信号。混在一起意味着任何一次漏斗改动都可能悄悄改变广告在花钱优化什么
+  - **示例运行绝不算转化**：`isDemo` 不是只有开发环境才为真——`InputStep` 的示例快捷路径（简历与 JD 都保持样例原文）在生产环境同样会置为 true。把这些计入转化，等于训练出价算法去买「点开样例看看就走、从不粘贴自己简历」的那类点击
+  - **本地不上报**：`NODE_ENV !== "production"` 时只打一条 `console.info`，否则 localhost 的调试会往真实广告账户里灌假转化、污染出价
+  - **没做本地去重**：调用点只有一处且在用户手势里（不是 effect），React 不会重复触发；而真的做完第二次面试本就是第二次转化——该算一次还是多次属于 Google Ads「转化次数统计方式」的设置，不该在代码里写死
+
+### Changed
+- **隐私说明补上 Google Ads 一节** —— 「第三方服务」原本只列了 DeepSeek / Supabase / Vercel，加了 gtag 之后这份清单就不再属实了。新增条目说明 Google 会写入 Cookie 用于统计广告带来的访问，并明确该 Cookie 不含简历、JD 或回答内容
+
+### Verified
+- `npm run build` 通过，无新增警告
+- **浏览器实测标签真的在跑**（只验证脚本存在是不够的——内联片段里的 `function gtag(){}` 即使外部脚本加载失败也照样存在）：`window.google_tag_manager` 下出现了 `AW-18389654749` 键，说明 gtag.js 已成功接管；网络层观察到真实的转化打点请求 `googleads.g.doubleclick.net/pagead/viewthroughconversion/18389654749` 与 `google.com/ccm/collect?tid=AW-18389654749&en=page_view`
+- **实际走完一遍示例面试**（3 题答到底 → 反馈页），控制台无 `[gtag]` 输出，确认示例运行被 `!isDemo` 拦住
+- **反查生产包确认接线**：`advanceToNext` 压缩后为 `p||console.warn("[gtag] CONVERSION_LABEL 未配置…")`，`p` 即 `isDemo`，守卫正确。同时暴露一个必须知道的事实——**`CONVERSION_LABEL` 为空字符串是编译期常量，webpack 已把 `window.gtag(...)` 整句作为死代码消除**：填入标签并重新构建之前，转化调用不是「不触发」而是根本不在包里
+
+### Pending
+- **转化标签（conversion label）尚未填入**，需从 Google Ads「转化操作 → 完成一次面试 → 安装代码」中取得 `send_to: 'AW-18389654749/XXXX'` 斜杠后那段，填进 `lib/gtag.ts` 的 `CONVERSION_LABEL` 并重新部署
+
+---
+
 ## [0.13.1] — 2026-08-12
 
 ### Fixed
