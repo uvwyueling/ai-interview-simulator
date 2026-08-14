@@ -6,6 +6,22 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.13.3] — 2026-08-15
+
+### Added
+- **填入「完成一次面试」的转化标签** —— `lib/gtag.ts` 的 `CONVERSION_LABEL` 由空字符串改为 `M6MSCPCLzuEcEN2578BE`（Google Ads 转化操作「完成一次面试」，类别：提交潜在客户表单，价值 5 USD，统计方式「仅一次」）。至此 v0.13.2 埋下的上报链路才真正通电
+
+### Verified
+- `npm run build` 通过
+- **反查生产包，确认死代码消除已解除**：v0.13.2 时 `advanceToNext` 只剩 `p||console.warn("[gtag] CONVERSION_LABEL 未配置…")`；现在编译为 `p||(…window.gtag("event","conversion",{send_to:"AW-18389654749/"+u})…)`，其中 `u="M6MSCPCLzuEcEN2578BE"`。`p` 仍是 `isDemo`，示例运行的守卫未受影响
+- **dev 分支已被折叠掉**：包内搜不到 `conversion suppressed` 字样，确认 `NODE_ENV` 常量折叠生效，localhost 的调试不会污染真实广告账户
+
+### Pending
+- **出价用的主要转化「出题成功」尚未接入** —— 「完成一次面试」是约 60 分钟的承诺，按现有漏斗（07-24→07-28：15 个真人 → 4 个 `input_completed`）每月只有个位数，喂不动智能出价（经验阈值约 15–30 次/月）。计划在 `startInterview(…, false)` 成功处再上报一个转化作为主要出价目标，本次面试完成则降为次要
+- **Google Ads 后台自动创建的「网页浏览」仍是主要转化目标**，需降级为次要，否则出价会被优化成"找会打开网页的人"
+
+---
+
 ## [0.13.2] — 2026-08-14
 
 ### Added

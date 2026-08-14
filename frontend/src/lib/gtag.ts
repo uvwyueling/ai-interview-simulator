@@ -30,8 +30,11 @@ export const GOOGLE_ADS_ID = "AW-18389654749";
  *
  * Empty string = not configured yet → `reportInterviewCompleted()` no-ops
  * instead of sending a malformed `send_to` that Google would silently discard.
+ * Note it is a compile-time constant: while empty, webpack strips the gtag call
+ * from the bundle entirely, so an unset label means the code is *absent*, not
+ * merely inert.
  */
-const CONVERSION_LABEL = "";
+const CONVERSION_LABEL = "M6MSCPCLzuEcEN2578BE";
 
 const IS_PROD = process.env.NODE_ENV === "production";
 
