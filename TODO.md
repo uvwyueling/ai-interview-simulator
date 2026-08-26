@@ -106,20 +106,39 @@
   - 推迟是安全的：`encodeMp3(blob, {signal})` 的接口当初就按「可换 Worker」设计，真要迁 Worker 只动该文件内部，不触碰 `useAnswerAudio` / `InterviewStep` / 服务端 provider。早测晚测返工成本一样
   - 届时若 P90 明显偏向 5s 一侧，再评估 Worker；埋点 `encodeMs` 已就位
 
-- [ ] 🔴 **`.env.local` 里有两行 `ASR_PROVIDER`（第 6 行 `mock`、第 9 行 `xfyun`），后者生效——第 2 节一落地它就从哑弹变实弹**
-  - 现在：`xfyun` 不是合法 case → `provider.ts` 落到 `default: return null` → 能力探针报 `available:false` → 功能静默关闭。**后果只是本地测不到编码路径**（这正是当初设计的降级行为，工作正常）
-  - 第 2 节之后：`xfyun` 变成合法值 → **静默把本地开发切到真实付费供应商**，按音频秒数计费，而 `rateLimit` 是冷启动即重置的内存实现（见下方「成本硬上限」）
-  - 写第 2 节时**第一件事**就是清掉这行重复，并明确本地默认留在 `mock`
+- [x] ~~**`.env.local` 里两行 `ASR_PROVIDER` 的哑弹**~~ —— 用户已自行清掉重复行，现在只剩 `ASR_PROVIDER=xfyun`
+  - ⚠️ **但它现在是实弹了**：第 2 节落地后 `xfyun` 是合法 case，**本地每次录音都会真的调讯飞并计费**。这是明确选择，不是意外
+  - 🔴 **生产环境仍然不要配 `ASR_PROVIDER=xfyun`** —— 成本硬上限（见下方）没做，这层隔离**只存在于部署配置里，没有任何代码层面的保障**
+  - 本地要临时回 mock 又不想动 `.env.local`：建一个 `.env.development.local` 写 `ASR_PROVIDER=mock`（Next 的加载优先级高于 `.env.local`，且已被 `.gitignore` 的 `.env*.local` 覆盖），用完删掉
 
-### 2. 讯飞 provider（新增 `src/lib/asr/providers/xfyun.ts` + `provider.ts` 加一个 case）
+### 2. 讯飞 provider（`src/lib/asr/providers/xfyun.ts`）✅ 2026-08-27
 
-- [ ] **照现有 `providers/openai.ts` 的形状写**：裸 `fetch`，不引 SDK；导出 `isXfyunConfigured()` + `xfyunProvider`；`name: "xfyun"`、`providerClass: "cloud"`
-- [ ] ⚠️ **它是异步任务制，不是一次阻塞调用** —— 这是与 openai provider 最大的结构差异。实测形态是 **上传 → 建任务 → 轮询 query（约 4 次）**，`transcribe()` 里要自己实现轮询循环
-  - 轮询必须**尊重传入的 `AbortSignal`**，每次 sleep 前后都检查，否则用户点「跳过」或服务端超时后循环还在跑
-  - 总预算必须留在 `SERVER_PROVIDER_TIMEOUT_MS` 内（重标定见下一节「v0.14.0 上线前必做」的第一条，那里有实测延迟曲线的起点值）
-- [ ] **错误码映射到 `AsrErrorCode`** —— 讯飞返回自己的 `code` 字段（实测见过 `20304` = 格式不支持时的任务失败）。映射到 `auth` / `rate_limit` / `unsupported_media` / `upstream`，**绝不把讯飞的原始 message 透给用户**（红线：路由拥有中文文案）
-- [ ] **日志纪律照抄路由顶部那段** —— 只记 `err.name`、`code`、HTTP status。讯飞的响应体里带转写全文，`console.error(err)` 一次就是一起事故
-- [ ] **`.env.example` 补三个变量**：`XFYUN_APP_ID` / `XFYUN_API_KEY` / `XFYUN_API_SECRET`，标注 server-side only、绝不加 `NEXT_PUBLIC_` 前缀；`ASR_PROVIDER` 的注释里加 `xfyun` 一行
+- [x] **照 `providers/openai.ts` 的形状**：裸 fetch 不引 SDK，`isXfyunConfigured()` + `xfyunProvider`
+- [x] **异步任务制三段**：上传 → `pro_create` → 轮询 `query`，轮询可被 `AbortSignal` 中断
+- [x] **成功判据 `code === 0` 且 `task_status ∈ {3,4}`**（字符串与数字都吃）
+- [x] **结果拼接** `lattice[].json_1best.st.rt[].ws[].cw[].w`，对象与 JSON 字符串两种形态都吃
+- [x] **前置格式守卫**：非 mp3/wav 直接拒，不白花一次上传
+- [x] **热词只送中文**（provider 内部按 `/[一-龥]/` 过滤，不动 `extractHints`、不改 wire 格式）
+- [x] **`provider.ts` 加 case** + **`.env.example` 补三个变量**
+- [x] **日志纪律**：实测审计通过，日志里只有 `[transcribe] provider failed: <code> <status> AsrError`，无响应体、无转写原文、无初稿
+
+**探针坐实的事实（脚本在 scratchpad，未进仓库）**
+
+| 项 | 结论 |
+|---|---|
+| 鉴权 | HMAC-SHA256 + `digest`，签名串 `host/date/POST {path} HTTP/1.1/digest`。⚠️ 与讯飞另一个转写产品 lfasr 的 `signa`/HmacSHA1 **完全不同**，凭据不通用 |
+| MP3 | `encoding:"lame"` 实测接受，第 1 节的格式选择不用返工 |
+| `json_1best` | 实测是**对象**（代码仍容错字符串形态） |
+| 延迟 | 22.3s 音频 → 端到端 1.5–2.5s；112.2s → 4.3s。拟合 `≈1.5s + 秒数×0.025`，外推 300s ≈ **9s** |
+
+- [x] ⚠️ **真实调用发现并修复一个实现 bug：错误分类被 HTTP 状态码短路** —— 讯飞失败时返回的是 **HTTP 400，而 vendor code 在 body 里**。原实现在 `!res.ok` 时直接按状态码映射成 `upstream`，body 从未被读取，于是 `20304 → unsupported_media` 那条映射**永远不会触发**。
+  - 后果不只是文案：它把「用户录了一段静音」和「供应商挂了」归进同一个桶，**污染失败率指标**——前者是用户行为，后者是事故
+  - 已改为：`!res.ok` 时先解析 body 取 vendor code，有则按 code 映射，没有再退回状态码映射。body 只用来取那个数字，绝不记日志
+
+- [ ] 🟡 **静音的用户文案仍不准确** —— 20304 现在正确归类为 `unsupported_media`，但路由对应的文案是「音频格式不受支持」，而真实成因往往是**用户录了一段没声音的音频**（路由的 `MIN_AUDIO_BYTES` 拦不住，静音 MP3 也有 24KB）。分类已经对了（不再算作供应商故障），只剩文案不贴切。要根治得给 `AsrErrorCode` 加一个成员，会牵动路由的 switch 与文案，本次没做
+
+- [ ] ⚠️ **`dhw` 热词的真实效果仍未定** —— TTS 音频上带与不带**逐字节相同**（已确认参数确实发出且被接受）。最可能是 TTS 过于干净、识别器高置信，热词偏置没机会起作用。**待真人录音复测**；若真人语音上也无效，第 4 节「热词分流」的收益就没有证据支撑
+  - 另一个观察：**同一段音频识别结果自己会漂**（112s 那版是同一句重复 5 遍，`Vercel` 分别识别成 `versol` / `verso`，`GMV` 有 `gmv` / `GM v`，`A/B` 有 `ab` / `a b` / `a一`）。这意味着单样本 A/B 对照证据力偏弱，也意味着**纠正词典必须能吃同一错误的多个变体**
 
 ### 3. 英文词表改作后处理纠正词典（新增 `src/lib/asr/correct.ts`）
 

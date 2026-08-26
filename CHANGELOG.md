@@ -6,6 +6,41 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.14.0] — 2026-08-27 · hybrid ASR 第三批第 2 节（接讯飞 provider）
+
+> 供应商从 `mock` 换成真的讯飞 OST（极速录音转写）。至此「高准确转写」第一次真正产生识别增益——在此之前 `asrUpgradeDistance` 恒为 0，因为 mock 原样返回初稿。**生产环境本次不启用**（`ASR_PROVIDER` 不配置），隔离只靠部署配置。
+
+### Added
+- **`lib/asr/providers/xfyun.ts`** —— 讯飞 OST provider。与 `providers/openai.ts` 的结构性差异是它**异步任务制**：一次 `transcribe()` 内部跑三段（上传 → `pro_create` → 轮询 `query`），而不是一次阻塞请求
+  - **鉴权是 HMAC-SHA256 + `digest`**，⚠️ 与讯飞另一个转写产品 lfasr 的 `signa`/HmacSHA1 **完全不同**，凭据与代码都不通用。搜索引擎上满屏是后者，照抄会全程 401
+  - **multipart 手工拼成 Buffer**，不用 `FormData` —— `digest` 是请求体的 sha256，拿不到确定的序列化字节就算不出正确签名
+  - **轮询可被 `AbortSignal` 中断**（沿用 `providers/mock.ts` 的可中断 sleep 写法）。不中断的代价不只是体验：用户点了「跳过」而循环还在跑，等于继续为一个没人要的结果付费
+  - **成功判据是 `code === 0` 且 `task_status ∈ {3,4}`**。失败时讯飞也会返回 `task_status:"4"`（回调完成），只看 status 会把失败读成成功
+  - **前置格式守卫**：非 mp3/wav 在上传前就拒，不白花一次上传的时间与流量
+  - **热词只送中文**（provider 内部按 `/[一-龥]/` 过滤）。不动 `extractHints`、不改 wire 格式——配额重平衡是后续独立的一步
+- **`.env.example` 补 `XFYUN_APP_ID` / `XFYUN_API_KEY` / `XFYUN_API_SECRET`**，并在 `ASR_PROVIDER` 注释里标明 `xfyun` 是**按音频秒数计费**的付费供应商
+
+### Fixed
+- **错误分类被 HTTP 状态码短路（真实调用才发现）** —— 讯飞失败时返回 **HTTP 400，而 vendor code 在 body 里**。原实现在 `!res.ok` 时直接按状态码映射成 `upstream`，body 从未被读取，于是 `20304 → unsupported_media` 那条映射**永远不会触发**
+  - 后果不只是文案错：它把「用户录了一段静音」和「供应商挂了」归进同一个桶，**污染失败率指标**——前者是用户行为，后者是事故
+  - 改为 `!res.ok` 时先解析 body 取 vendor code，有则按 code 映射，无则退回状态码映射。body 只用来取那个数字，**绝不记日志**
+
+### Verified
+- `npm run build` 通过，无新增警告
+- **真实调用走完整路由**（22.3s MP3）：`upgraded: true`、`providerClass: "cloud"`、`latencyMs` 1.5–2.5s，转写内容与独立探针逐字一致
+- **错误路径**：静音 MP3 → 修复后正确归类为 `unsupported_media`/415，降级保留初稿
+- **`mock` 全链路回归**：`providerClass: "mock"`、原样返回初稿，零成本验收路径未被破坏
+- **日志审计**：dev server 日志中只有 `[transcribe] provider failed: <code> <status> AsrError`，无响应体、无转写原文、无初稿、无音频
+- **延迟曲线**：22.3s 音频 → 2.1s（2 轮询）；112.2s → 4.3s（4 轮询）。拟合 `≈1.5s + 秒数×0.025`，外推 300s ≈ 9s
+
+### Pending
+- **`dhw` 热词的真实效果未定** —— TTS 音频上带与不带**逐字节相同**（已确认参数确实发出且被服务端接受）。最可能是 TTS 过于干净、识别器高置信，热词偏置没机会起作用。待真人录音复测；若真人语音上也无效，「热词分流」这步的收益就没有证据支撑
+- **静音的用户文案不贴切** —— 20304 现已正确归类为 `unsupported_media`（不再算供应商故障），但对应文案是「音频格式不受支持」，而真实成因往往是用户录了没声音的音频。根治要给 `AsrErrorCode` 加成员，牵动路由 switch 与文案，本次未做
+- **超时重标定大概率可以缩水** —— 实测 300s 音频约 9s，而现有 `SERVER_PROVIDER_TIMEOUT_MS = 18s` 有 2 倍余量。原先担心的「长回答必然超时」在 MP3 下没有出现
+- **隐私文案实名 + 成本硬上限仍未做**，两者都必须在生产启用 provider 之前完成
+
+---
+
 ## [0.14.0] — 2026-08-26 · hybrid ASR 第三批第 1 节（浏览器端 MP3 转码）
 
 > 供应商选定讯飞后暴露的硬约束：**它只收 wav/pcm/mp3，Chrome 的 MediaRecorder 只出 webm/opus，两边没有交集**。所以这不是优化，是必需项。WAV 被体积排除（16k/16bit/单声道 300 秒约 9.6MB，是 Vercel 请求体上限的两倍）。本节只做转码，供应商仍是 `mock`。

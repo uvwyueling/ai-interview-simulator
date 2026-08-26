@@ -13,6 +13,7 @@
 import type { AsrProvider, AsrProviderClass } from "./types";
 import { mockProvider } from "./providers/mock";
 import { isOpenAiConfigured, openAiProvider } from "./providers/openai";
+import { isXfyunConfigured, xfyunProvider } from "./providers/xfyun";
 
 /** Not a secret, so module-top is fine (unlike the API keys, read lazily). */
 const PROVIDER_NAME = (process.env.ASR_PROVIDER ?? "").trim().toLowerCase();
@@ -27,6 +28,10 @@ function build(): AsrProvider | null {
       // Unconfigured is the same as unavailable: better to fall back to
       // browser-only than to promise an upgrade and 500 mid-answer.
       return isOpenAiConfigured() ? openAiProvider : null;
+    case "xfyun":
+      // The shipping vendor. Same rule as above — missing credentials degrade
+      // to browser-only rather than failing mid-answer.
+      return isXfyunConfigured() ? xfyunProvider : null;
     default:
       // Unset OR misspelled. Deliberately null rather than a throw — a typo in a
       // production env var should degrade to browser-only, not take down the
