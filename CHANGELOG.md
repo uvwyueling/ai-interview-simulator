@@ -101,6 +101,48 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Notes
 - 把初稿文本发到自己的服务器**不是新的数据类别**——`generate-followup` 早已 POST 完整回答文本。
 - 翻转默认值为「高准确」前必须先在隐私页公布供应商名，并把 `echo_voice_mode_v1` 升到 `_v2`，让当初的选择被重新征询而不是被静默重新解释。
+---
+
+## [0.13.3] — 2026-08-15
+
+### Added
+- **填入「完成一次面试」的转化标签** —— `lib/gtag.ts` 的 `CONVERSION_LABEL` 由空字符串改为 `M6MSCPCLzuEcEN2578BE`（Google Ads 转化操作「完成一次面试」，类别：提交潜在客户表单，价值 5 USD，统计方式「仅一次」）。至此 v0.13.2 埋下的上报链路才真正通电
+
+### Verified
+- `npm run build` 通过
+- **反查生产包，确认死代码消除已解除**：v0.13.2 时 `advanceToNext` 只剩 `p||console.warn("[gtag] CONVERSION_LABEL 未配置…")`；现在编译为 `p||(…window.gtag("event","conversion",{send_to:"AW-18389654749/"+u})…)`，其中 `u="M6MSCPCLzuEcEN2578BE"`。`p` 仍是 `isDemo`，示例运行的守卫未受影响
+- **dev 分支已被折叠掉**：包内搜不到 `conversion suppressed` 字样，确认 `NODE_ENV` 常量折叠生效，localhost 的调试不会污染真实广告账户
+
+### Pending
+- **出价用的主要转化「出题成功」尚未接入** —— 「完成一次面试」是约 60 分钟的承诺，按现有漏斗（07-24→07-28：15 个真人 → 4 个 `input_completed`）每月只有个位数，喂不动智能出价（经验阈值约 15–30 次/月）。计划在 `startInterview(…, false)` 成功处再上报一个转化作为主要出价目标，本次面试完成则降为次要
+- **Google Ads 后台自动创建的「网页浏览」仍是主要转化目标**，需降级为次要，否则出价会被优化成"找会打开网页的人"
+
+---
+
+## [0.13.2] — 2026-08-14
+
+### Added
+- **Google Ads 转化跟踪（gtag.js，`AW-18389654749`）** —— 准备在 Google Ads 投流，需要广告平台能识别「点击广告 → 访问了站点」。代码加在 `app/layout.tsx`，因此覆盖首页与 `/privacy` 全站
+  - 用 `next/script` 的 `afterInteractive` 策略而非直接写 `<script>`：Google 给的原始片段是 `async` 的，但放进 App Router 的 `<head>` 里会与 Next 的脚本调度打架；`afterInteractive` 保证它在水合后加载，不阻塞首屏
+  - **衡量 ID 直接内联，没走环境变量**。它本来就会明文出现在每个访客的页面源码里，不是密钥；反过来，若托管端漏配环境变量，转化跟踪会静默失效——而这种失效要等广告预算烧完才看得见
+
+- **「完成一次面试」转化上报（`lib/gtag.ts` + `InterviewContext.advanceToNext`）** —— 光有 gtag.js 只能让 Google 看见「有人来过」，看不见「有人用完了」，智能出价没有优化目标
+  - **单独一个模块，不塞进 `lib/analytics.ts`**。那边是我们自己的漏斗（约 25 个事件、富属性、进 Supabase、给人看），这边是卖给 Google 出价算法的唯一一个高价值信号。混在一起意味着任何一次漏斗改动都可能悄悄改变广告在花钱优化什么
+  - **示例运行绝不算转化**：`isDemo` 不是只有开发环境才为真——`InputStep` 的示例快捷路径（简历与 JD 都保持样例原文）在生产环境同样会置为 true。把这些计入转化，等于训练出价算法去买「点开样例看看就走、从不粘贴自己简历」的那类点击
+  - **本地不上报**：`NODE_ENV !== "production"` 时只打一条 `console.info`，否则 localhost 的调试会往真实广告账户里灌假转化、污染出价
+  - **没做本地去重**：调用点只有一处且在用户手势里（不是 effect），React 不会重复触发；而真的做完第二次面试本就是第二次转化——该算一次还是多次属于 Google Ads「转化次数统计方式」的设置，不该在代码里写死
+
+### Changed
+- **隐私说明补上 Google Ads 一节** —— 「第三方服务」原本只列了 DeepSeek / Supabase / Vercel，加了 gtag 之后这份清单就不再属实了。新增条目说明 Google 会写入 Cookie 用于统计广告带来的访问，并明确该 Cookie 不含简历、JD 或回答内容
+
+### Verified
+- `npm run build` 通过，无新增警告
+- **浏览器实测标签真的在跑**（只验证脚本存在是不够的——内联片段里的 `function gtag(){}` 即使外部脚本加载失败也照样存在）：`window.google_tag_manager` 下出现了 `AW-18389654749` 键，说明 gtag.js 已成功接管；网络层观察到真实的转化打点请求 `googleads.g.doubleclick.net/pagead/viewthroughconversion/18389654749` 与 `google.com/ccm/collect?tid=AW-18389654749&en=page_view`
+- **实际走完一遍示例面试**（3 题答到底 → 反馈页），控制台无 `[gtag]` 输出，确认示例运行被 `!isDemo` 拦住
+- **反查生产包确认接线**：`advanceToNext` 压缩后为 `p||console.warn("[gtag] CONVERSION_LABEL 未配置…")`，`p` 即 `isDemo`，守卫正确。同时暴露一个必须知道的事实——**`CONVERSION_LABEL` 为空字符串是编译期常量，webpack 已把 `window.gtag(...)` 整句作为死代码消除**：填入标签并重新构建之前，转化调用不是「不触发」而是根本不在包里
+
+### Pending
+- **转化标签（conversion label）尚未填入**，需从 Google Ads「转化操作 → 完成一次面试 → 安装代码」中取得 `send_to: 'AW-18389654749/XXXX'` 斜杠后那段，填进 `lib/gtag.ts` 的 `CONVERSION_LABEL` 并重新部署
 
 ---
 

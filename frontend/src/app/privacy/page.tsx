@@ -101,7 +101,10 @@ export default function PrivacyPage() {
             · <span className="font-medium text-slate-800">浏览器内置语音识别服务</span>：语音转文字（Chrome 为 Google 的识别服务）。<br />
             · <span className="font-medium text-slate-800">高精度识别服务</span>：仅在你选择「高准确转写」时使用；供应商确定后会在此列明。<br />
             · <span className="font-medium text-slate-800">Supabase</span>：保存匿名使用统计。<br />
-            · <span className="font-medium text-slate-800">Vercel</span>：应用托管。
+            · <span className="font-medium text-slate-800">Vercel</span>：应用托管。<br />
+            · <span className="font-medium text-slate-800">Google Ads</span>：衡量广告效果。如果你是通过 Google 广告
+            访问本站，Google 会在你的浏览器中写入 Cookie，用于统计广告带来的访问量。
+            该 Cookie <span className="font-medium text-slate-800">不包含你的简历、JD 或回答内容</span>。
           </p>
         </Section>
 
