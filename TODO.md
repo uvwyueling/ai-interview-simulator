@@ -48,7 +48,7 @@
 - [x] **转写评分 👍/👎**，仅在云端真改动时出现
 - [x] 修复三个实现 bug：触顶结果被静默吞掉、`upgradeStatus` 报成 `none`、提交按钮把 MouseEvent 当参数传（每次点击都会跳过确认）
 
-## 🔜 v0.14.0 第三批（规格 · 2026-08-26 写，待执行）· 接讯飞 provider
+## 🔜 v0.14.0 第三批 · 接讯飞 provider（规格 2026-08-26 写 · **第 1 节已完成**，2–4 节待执行）
 
 > 前两批把链路建好了但供应商是 `mock`。这一批把它换成真的。**规格依据是 2026-08-16 的真实探针实测**，不是文档推测。
 >
@@ -69,21 +69,40 @@
 
 ---
 
-### 1. 浏览器端 MP3 转码（新增 `src/lib/voice/encodeMp3.ts`）
+### 1. 浏览器端 MP3 转码（`src/lib/voice/encodeMp3.ts`）✅ 2026-08-26
 
-- [ ] **只允许动态 `import()`** —— 与 `lib/voice/capture.ts` 同一条纪律，理由也相同：浏览器模式下这个 chunk（含编码器依赖）不该被下载。在 Network 面板可核实
-- [ ] **依赖用 `@breezystack/lamejs`**，不是原版 `lamejs` —— 原版的 ESM 构建有 `MPEGMode is not defined` 的老问题，在现代打包器里要打补丁才能跑
-- [ ] **链路**：`capture.stop()` 返回的 webm/opus Blob → `OfflineAudioContext(1, frames, 16000)` 一步完成解码 + 重采样到 16k 单声道 → Float32 转 Int16 PCM → lamejs 编码 **32kbps 单声道** → `Blob(type: "audio/mpeg")`
-  - 用 `OfflineAudioContext` 而非 `decodeAudioData` 再手工重采样：重采样是它自带的，手写线性插值只会更差
-- [ ] **接入点是 `hooks/useAnswerAudio.ts:184` 的 FormData 之前**，不进 `capture.ts` —— capture 的职责是「拥有麦克风设备」，编码是纯变换，混进去会让那个已经很密的生命周期模块再长一截
-- [ ] **路由不用改**：`ALLOWED_AUDIO_TYPES` 已经含 `audio/mpeg`，`MAX_AUDIO_BYTES`（3.5MB）对 MP3 32kbps/300s ≈ 1.2MB 绰绰有余
-- [ ] ⚠️ **重新审视 `AUDIO_BITS_PER_SECOND`（当前 24000）—— 它可能该调高而不是调低**
-  - 现在多了一级有损转码：opus 24k →（解码）→ mp3 32k。**两级损失叠加**，而最终上传体积由 MP3 那一级决定，opus 那一级压得再狠也省不下上传字节
-  - 也就是说 24k 这个值原本的理由（防止贴 Vercel 上限）**已经不成立了**。采集端应该给解码器尽量干净的输入，考虑升到 48k 甚至用浏览器默认
-  - 这条与「码率实测再锁定」是同一次实验，一起做
-- [ ] ⚠️ **主线程阻塞要实测** —— 300 秒音频的编码约 1–2 秒。这段时间用户正看着「正在优化转写…」，如果 spinner 卡住就是负体验。**先在主线程实现并测量**，超过约 300ms 再搬进 Web Worker（别一上来就上 Worker，那是没测就付的复杂度）
-- [ ] **内存纪律** —— 解码后的 AudioBuffer 是 300s × 16000 × 4B ≈ **19MB**，比原始 webm 大一个量级。编码完成后立即置空引用；失败路径同样释放。这是本地内存，不是隐私问题，但在低端手机上是崩溃风险
-- [ ] **失败即降级，不是报错** —— 编码失败时**不能**退回发 webm（讯飞不收）。直接放弃升级、保留初稿，`transcribe_failed` 加一个新 reason `encode_failed`
+- [x] **只允许动态 `import()`** —— 已在生产包结构上核实：编码器落在独立 chunk（`a7f1ff53.*.js`，**158KB raw / 54KB gzip**），主 chunk 与共享 chunk 均搜不到 `Mp3Encoder`，首页 First Load JS 仍是 139KB（51.8→51.9KB，只是 hook 那点改动）
+  - 注：npm 上 unpacked 471KB 是含 source map 与多份构建的体积，**实际过线只有 54KB gzip**，原先「约 50KB」的估计是对的
+- [x] **依赖 `@breezystack/lamejs` v1.2.7**（具名导出 `Mp3Encoder`）
+- [x] **链路**：webm/opus → `OfflineAudioContext(1, 1, 16000)` 解码兼重采样 → 逐帧降混+转 Int16 → lamejs 32kbps 单声道 → `Blob("audio/mpeg")`
+- [x] **接入点在 `useAnswerAudio.finish()`**，不进 `capture.ts`
+- [x] **路由未改**：`ALLOWED_AUDIO_TYPES` 已含 `audio/mpeg`
+- [x] **内存纪律**：逐帧转换，不做整份 Int16 预拷贝（300s 可省约 9.6MB）；结束即释放 chunk 引用
+- [x] **失败即降级**：新 reason `encode_failed`；UI 走既有兜底文案，无需新增
+
+**spike 实测结论（页面已删除）**
+
+- ✅ **假设 1 成立**：在 16kHz 的 `OfflineAudioContext` 上调 `decodeAudioData`，返回的 buffer 确实是 `sampleRate === 16000`。重采样是它自带的，不用手写
+- ❌ **假设 2 被推翻**：解码后 `numberOfChannels === 2`。`capture.ts` 的 `channelCount: 1` 只是**请求**，不是保证。**降混分支是必需的**，不是防御性代码
+- ✅ **假设 3 精确命中**：300s @32kbps = **1,200,384 字节**（1.20MB），Node 与 Chrome 两处结果逐字节一致
+- ⚠️ **额外发现：`decodeAudioData` 会 detach 传入的 ArrayBuffer**，之后 `byteLength` 读到 0。任何需要原始字节数的地方必须在解码前取
+
+**线程模型：主线程分片 + MessageChannel（不上 Worker）**
+
+| 策略 | encodeMs(108s 音频) | 最长阻塞 |
+|---|---|---|
+| 不 yield | 1987 | **1987ms** |
+| MessageChannel 每 50 帧 | 1931 | 82ms |
+| MessageChannel 每 20 帧 | 1954 | 33ms |
+| **MessageChannel 每 10 帧** | 1924 | **23ms** |
+
+- **yield 本身零成本**（总耗时差落在噪声内），所以取最密的每 10 帧
+- **必须用 MessageChannel，不能用 `setTimeout`**：后者嵌套后被钳到 ~4ms，后台标签页更是钳到 ~1s——实测时正是它把一次中断测试拖到编码结束之后
+- Worker 不会让编码更快（同一颗 CPU），只能再抹掉那 23ms 抖动，不值当前的构建面
+
+- [ ] ⚠️ **吞吐量仍有一个未定区间** —— 同一段代码 Node 测得约 120x 实时、Chrome 测得约 51x。差异几乎肯定来自**无头标签页的 CPU 降权**（两处产出的 mp3 字节数完全相同，说明干的活一样），但本环境无法测前台。据此 300s 的编码耗时在 **2.4s–5.8s** 之间
+  - 不阻塞上线：响应性已由分片解决，与吞吐无关
+  - **上线后看 `encodeMs` 的真实分布定论**（埋点已带）。若 P90 明显偏向 5s 一侧，再评估 Worker
 
 ### 2. 讯飞 provider（新增 `src/lib/asr/providers/xfyun.ts` + `provider.ts` 加一个 case）
 

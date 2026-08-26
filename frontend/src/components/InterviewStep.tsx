@@ -616,7 +616,12 @@ export default function InterviewStep() {
       mode: voiceMode,
       transcribeLatencyMs: outcome.latencyMs,
       durationSec: Math.round(outcome.durationMs / 1000),
+      // audioBytes keeps its original meaning (raw captured bytes) so the column
+      // stays comparable across the transcode change; uploadBytes is the new
+      // number — what actually went over the wire, and what the provider bills.
       audioBytes: outcome.bytes,
+      uploadBytes: outcome.uploadBytes,
+      encodeMs: outcome.encodeMs,
       draftLen,
       cloudLen,
       hintCount: hints.length,

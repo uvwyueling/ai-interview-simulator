@@ -6,6 +6,42 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.14.0] — 2026-08-26 · hybrid ASR 第三批第 1 节（浏览器端 MP3 转码）
+
+> 供应商选定讯飞后暴露的硬约束：**它只收 wav/pcm/mp3，Chrome 的 MediaRecorder 只出 webm/opus，两边没有交集**。所以这不是优化，是必需项。WAV 被体积排除（16k/16bit/单声道 300 秒约 9.6MB，是 Vercel 请求体上限的两倍）。本节只做转码，供应商仍是 `mock`。
+
+### Added
+- **`lib/voice/encodeMp3.ts`** —— webm/opus → MP3(16kHz 单声道 32kbps)，**只允许动态 `import()`**。与 `capture.ts` 同一条纪律，且多一条理由：这个 chunk 拖着整个编码器，静态引入会让每个「仅浏览器转写」的用户下载一个他永远不会执行的编码器
+  - 结构上已核实：编码器独占 chunk（**158KB raw / 54KB gzip**），主 chunk 与共享 chunk 搜不到 `Mp3Encoder`，首页 First Load JS 仍为 139KB
+- **`@breezystack/lamejs` v1.2.7** —— 不用原版 `lamejs`，后者的 ESM 构建有 `MPEGMode is not defined` 的老问题
+- **埋点 `uploadBytes` 与 `encodeMs`**（`transcribe_completed`）。**`audioBytes` 保持原义（原始采集字节）不变** —— 把它改成编码后字节会让 Supabase 里同一列前后两种口径，是隐性的数据断裂
+- **失败原因 `encode_failed`**。UI 文案未改：`InterviewStep` 的兜底分支已覆盖任何新 reason
+
+### Changed
+- **`useAnswerAudio.finish()` 里 `AbortController` 前移到编码之前** —— ⚠️ 这不是整理代码。编码要跑几秒，而 `cancelUpgrade()` 只能中断**已经放进 ref** 的 controller；若照原位置把编码插在它前面，「跳过」在整个编码窗口内会是静默无效的，正是 `df8deba` 刚修好的那类 bug 换个地方复发
+- **编码后补一次 generation 复查** —— 秒级 await 期间完全可能切题，而把上一题的转写写到下一题是这个功能能产生的最坏 bug
+- **`startedAt` 移到编码之后** —— `transcribeLatencyMs` 衡量的是供应商调用，`CLIENT_TRANSCRIBE_TIMEOUT_MS` 是网络预算，两者都不该为我们自己的 CPU 时间买单
+- **`AUDIO_BITS_PER_SECOND`(24k) 的注释重写，取值不动** —— 它原本的理由是「防止贴 Vercel 上限」，转码之后上传体积由 MP3 那级决定，这条理由已失效；而两级有损叠加（opus→解码→mp3）反而要求更干净的输入。真正取值留给第 2 节接上讯飞后的码率实验从数据定，现在改是无凭据的猜
+- **`MAX_AUDIO_BYTES` 注释写清它现在身兼两职**：在 `capture.ts` 里守的是原始 webm 的内存上限，在路由里守的是上传体积（现为 MP3）
+
+### Verified
+- `npm run build` 通过，无新增警告
+- **真实 MediaRecorder blob 端到端**：webm/opus 46,511B(15s) → audio/mpeg 60,048B；MP3 同步字 `ff f3`；**回解码得到 15.01 秒 / 16000Hz**；60,048B ÷ 15.01s = 恰好 32kbps
+  - 输出比输入**大**（压缩比 0.77）属预期：opus@24k 比 mp3@32k 更高效。这里要的是格式兼容，不是压缩
+- **中断可用**：编码进行中触发 abort，三次分别在 29/47/33ms 返回 `failed/aborted`，对照组未中断为 348ms 完成。「跳过」能真正打断编码
+- **三个地基假设的实测结论**：
+  - ✅ 16kHz 的 `OfflineAudioContext` 上 `decodeAudioData` 确实重采样到 16000，重采样不用手写
+  - ❌ **解码后 `numberOfChannels === 2`** —— `capture.ts` 的 `channelCount: 1` 只是请求不是保证，**降混分支是必需的**
+  - ✅ 300s @32kbps = 1,200,384 字节，Node 与 Chrome 逐字节一致
+  - ⚠️ 额外发现：**`decodeAudioData` 会 detach 传入的 ArrayBuffer**，之后 `byteLength` 读 0。原始字节数必须在解码前取
+- **线程模型由实测定，不是拍的**：不 yield 时 108 秒音频阻塞主线程 1987ms；MessageChannel 每 10 帧把最长阻塞压到 **23ms 且总耗时无可测差异**。**必须是 MessageChannel 不能是 `setTimeout`**——后者嵌套后钳到 ~4ms、后台标签页钳到 ~1s
+
+### Pending
+- **编码吞吐仍有未定区间** —— 同一段代码 Node 约 120x 实时、无头 Chrome 约 51x（两处 mp3 字节数完全相同，说明干的活一样，差异应来自无头标签页的 CPU 降权），本环境测不了前台。据此 300 秒音频的编码在 **2.4–5.8 秒**之间。不阻塞：响应性已由分片解决。上线后按 `encodeMs` 的真实分布定论，P90 明显偏 5s 一侧再评估 Worker
+- **真机完整面试尚未跑** —— 需要真麦克风，headless 环境无法覆盖
+
+---
+
 ## [0.14.0] — 2026-08-12 · hybrid ASR 第二批（录音链路）
 
 > 接上一批。录音、上传、替换初稿、指标全部就位。**供应商仍未定**，`ASR_PROVIDER=mock` 下整条链路可跑通且零花费；默认仍是「仅浏览器转写」。

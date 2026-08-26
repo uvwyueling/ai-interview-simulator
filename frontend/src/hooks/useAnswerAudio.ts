@@ -33,6 +33,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CaptureHandle, CaptureResult } from "@/lib/voice/capture";
+import type { EncodeResult } from "@/lib/voice/encodeMp3";
 import { CLIENT_TRANSCRIBE_TIMEOUT_MS } from "@/lib/asr/limits";
 import { fetchWithTimeout, isTimeoutError } from "@/lib/fetchWithTimeout";
 
@@ -52,6 +53,8 @@ export type UpgradeFailReason =
   | "http_5xx"
   | "empty_result"
   | "user_skip"
+  /** The webm→MP3 transcode failed, so there was nothing the provider accepts. */
+  | "encode_failed"
   | "abandoned";
 
 export type UpgradeOutcome =
@@ -59,7 +62,11 @@ export type UpgradeOutcome =
       status: "upgraded";
       text: string;
       latencyMs: number;
+      /** Raw captured bytes. Unchanged meaning — NOT what went over the wire. */
       bytes: number;
+      /** Bytes actually uploaded, i.e. after the MP3 transcode. */
+      uploadBytes: number;
+      encodeMs: number;
       durationMs: number;
       providerClass: string;
     }
@@ -177,12 +184,43 @@ export function useAnswerAudio(opts: { enabled: boolean }) {
       }
 
       setPhase("transcribing");
+      // Created BEFORE the encode, not after. The encode runs for seconds, and
+      // cancelUpgrade() can only abort a controller that is already in the ref —
+      // leaving this below the encode would make 跳过 a silent no-op for that
+      // whole window, which is the bug class that was just fixed, relocated.
       const controller = new AbortController();
       abortRef.current = controller;
+
+      // The provider takes MP3; MediaRecorder emits webm/opus. Dynamic import so
+      // browser-only mode never downloads the encoder. See encodeMp3.ts.
+      let encoded: EncodeResult;
+      try {
+        const { encodeMp3 } = await import("@/lib/voice/encodeMp3");
+        encoded = await encodeMp3(captured.blob, { signal: controller.signal });
+      } catch {
+        encoded = { status: "failed", reason: "encoder" };
+      }
+      // Seconds-long await: a question change can land inside it, and a late
+      // write onto the NEXT question is the worst bug this feature can produce.
+      if (gen !== generationRef.current) return { status: "abandoned" };
+      if (encoded.status !== "ok") {
+        setPhase("idle");
+        abortRef.current = null;
+        // An abort during the encode is the user pressing 跳过, not a fault.
+        return {
+          status: "failed",
+          reason: encoded.reason === "aborted" ? "user_skip" : "encode_failed",
+          latencyMs: 0,
+        };
+      }
+
+      // Started AFTER the encode deliberately: transcribeLatencyMs measures the
+      // provider call and CLIENT_TRANSCRIBE_TIMEOUT_MS is the network budget —
+      // starting either clock earlier would charge them for our own CPU time.
       const startedAt = Date.now();
 
       const form = new FormData();
-      form.append("audio", captured.blob, "answer");
+      form.append("audio", encoded.blob, "answer.mp3");
       form.append("draft", draft);
       form.append("hints", JSON.stringify(hints));
       form.append("durationMs", String(captured.durationMs));
@@ -218,6 +256,8 @@ export function useAnswerAudio(opts: { enabled: boolean }) {
           text: data.text,
           latencyMs,
           bytes: captured.bytes,
+          uploadBytes: encoded.bytes,
+          encodeMs: Math.round(encoded.encodeMs),
           durationMs: captured.durationMs,
           providerClass: data.providerClass ?? "unknown",
         };
