@@ -6,6 +6,38 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.14.0] — 2026-08-27 · 修复 P0：键盘作答用户被捏造的计时数据压分
+
+> 与 hybrid ASR 无关的既有 bug，但它**此刻正在生产上误伤真实用户**，优先级高于 ASR 的后续小节。真实受害者：session `f58e6cf6`（唯一一个非伦敦的真实完整完成者），全程键盘作答，5 题中 4 题 `durationSec: 0`。
+>
+> 版本号仍记在 [0.14.0] 下而非 patch 自增：0.14.0 尚未发布，本分支上的四条目录都归属这个待发版本。
+
+### Fixed
+- **纯键盘作答的用户被两条捏造的批评压分** —— 原记录只提到「说话时长 0 秒」，读代码发现是两条：
+  - `InterviewStep` 的计时器只在 `recording === true` 时递增 → `durationSeconds: 0` → 提示词写「候选人本题总回答时长：0 秒」
+  - `thinkingTimeMsRef` **只在 `toggleRec` 里赋值**，键盘用户永不触发 → `thinkingTimeGuidance(0)` 落进 `s < 3` 分支 → 「思考时间不足 3 秒，说明候选人可能过于仓促」
+  - 外加用户可见症状：「用时」恒 `00:00`、「进度」恒「充足」、语速恒 0
+- **根因是 null-当-zero**：`seconds` 是说话计时器却被当作答时长用，而 `0` 同时表示「测得为零」和「根本没测」
+
+### Changed
+- **`Answer.durationSeconds` 删除，拆成 `answerSeconds`（墙钟）+ `speakingSeconds`（仅语音）** —— 删而不是保留旧字段是刻意的：全库 3 处引用会被编译器逐一指出，此后没人能不小心读到那个含混的值
+- **墙钟计时器从 `questionStartRef` 推导而非自增** —— 自增会在 interval 被节流或延迟时漂移，而这个数字是直接显示给用户看的
+- **`markThinkingDone()` 在录音键与 textarea 首次输入两处调用** —— 语音写入 `transcript` 走的是程序化 `setTranscript`，不触发 `onChange`，所以不会把语音路径误判成打字
+- **无语音时语速显示「—」而非 0** —— 对打字的回答显示「0 字/分」读起来像「你说得很慢」，比不显示更误导
+- **`buildTimingNote` 把 `0` 一律解释为「未测量」**。注意 `thinkingTimeFeedback` 是 schema 必填字段，所以无数据时的指示必须是「改为就内容给建议」而不是「不要说」，否则会直接触发 Zod 校验失败
+- 埋点 `durationSec` **保持原义（说话秒数）**，另加 `answerSec`。与第 1 节 `audioBytes`/`uploadBytes` 同一条理由：改变同名列的口径会在 Supabase 里造成隐性数据断裂
+
+### Verified
+- `npm run build` 通过
+- **同一份回答各跑 3 次真实 API**：键盘 78/79/86（均值 81.0），语音 78/85/82（均值 81.7）。LLM 自身重跑方差约 8 分，键盘与语音的**系统性差异 0.7 分，与 0 无法区分**。修复前实测差 **40 分**（42 vs 82）——惩罚是被消除而非缩小
+- 反馈文本中不再出现「仓促」「互动深度」「0 秒」「语速」等任何计时类判词；`thinkingTimeFeedback` 改为就回答内容给出的具体建议
+
+### Pending
+- **UI 三处改动未做可视化走查** —— 本环境浏览器面板无头（视口 0×0），只完成类型检查与逻辑核对。需在真实 Chrome 上纯键盘走一题，确认「用时」走秒、「进度」变化、语速显示「—」
+- **历史 session 的评分不回溯修正**
+
+---
+
 ## [0.14.0] — 2026-08-27 · hybrid ASR 第三批第 2 节（接讯飞 provider）
 
 > 供应商从 `mock` 换成真的讯飞 OST（极速录音转写）。至此「高准确转写」第一次真正产生识别增益——在此之前 `asrUpgradeDistance` 恒为 0，因为 mock 原样返回初稿。**生产环境本次不启用**（`ASR_PROVIDER` 不配置），隔离只靠部署配置。

@@ -430,8 +430,13 @@ export default function FeedbackStep({ onRestart }: Props) {
 
     // Compute timing from the thread exchanges
     const thinkingTime = thread.exchanges[0]?.answer.thinkingTimeMs ?? 0;
+    // SPEAKING time specifically — 0 means every exchange was typed, which the
+    // route reads as "no voice data" rather than "spoke for zero seconds".
+    // Wall-clock answerSeconds is deliberately NOT sent: it bundles reading the
+    // question, thinking and idling, so feeding it to the model would just swap
+    // one misleading timing signal for another.
     const speakingTime = thread.exchanges.reduce(
-      (sum, e) => sum + e.answer.durationSeconds * 1000,
+      (sum, e) => sum + e.answer.speakingSeconds * 1000,
       0
     );
 

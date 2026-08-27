@@ -20,9 +20,24 @@
 
 ## 🔴 本轮生成样例时发现、尚未修复的产品问题
 
-- [ ] **键盘作答用户被计时数据误伤评分（P0，影响真实用户）** —— `InterviewStep.tsx:235-239` 的计时器只在 `recording === true` 时递增，纯键盘作答的用户 `durationSeconds` 恒为 0 → `FeedbackStep.tsx:433` 算出 `speakingTime = 0` → `generate-feedback` 的 `buildTimingNote` 生成「候选人本题总回答时长：0 秒」→ LLM 判定"互动深度严重不足"并大幅压分。**实测对照：同一份回答，计时荒谬时总分 42（communication 60），计时正确时总分 82（communication 85），相差 40 分。**
-  - 真实影响：session `f58e6cf6`（豆瓣来源，**唯一一个非伦敦的真实完整完成者**）全程键盘作答，5 题中 4 题 `durationSec: 0`；他完成后点了 contact_cta 但没提交
-  - 修法二选一：① 计时改为"进入该题到提交"的墙钟时间，埋点上区分 `durationSec` 与 `speakingSec`（更根本）② `speakingTime === 0` 时让 `buildTimingNote` 输出"本题为键盘作答，无语音时长数据，请勿据此评价表达节奏"（更小、立即止血）
+- [x] ✅ **键盘作答用户被计时数据误伤评分（P0）—— 已修复 2026-08-27**
+  - **实际比原记录严重一倍**：`thinkingTimeMsRef` 也只在 `toggleRec` 里赋值，键盘用户 `thinkingTimeMs` 同样恒为 0 → `thinkingTimeGuidance(0)` 落进 `s < 3` 分支 → 「思考时间不足 3 秒、过于仓促」。**LLM 收到的是两条捏造的批评，不是一条**
+  - 用户可见症状：UI「用时」恒显示 `00:00`、「进度」恒为「充足」、语速恒为 0——用户打字好几分钟，界面坚称他用了 0 秒
+  - **根因**：`seconds` 是说话计时器，却被三个消费者当作答时长用；而 `0` 同时承担「测得为零」与「根本没测」两种含义（null-当-zero）
+  - **修法（三层）**：
+    - `types/interview.ts` **删掉含混的 `durationSeconds`**，换成 `answerSeconds`（墙钟，恒 > 0）+ `speakingSeconds`（仅语音，0 = 用户在打字）。删而不留是关键——编译器会把全部 3 处引用指出来，谁也没法再不小心读到那个含混值
+    - `InterviewStep.tsx` 加**从 `questionStartRef` 推导**的墙钟计时器（自增会在 interval 被节流时漂移）；抽出 `markThinkingDone()`，录音键与 textarea 首次 `onChange` 都调用（语音走程序化 `setTranscript`，不触发 onChange，所以不会误判）；UI 的用时/进度/thinkRing 改用墙钟，语速留在说话秒数且**无语音时显示「—」而非 0**
+    - `generate-feedback/route.ts` 的 `buildTimingNote` 把 `0` 一律当「未测量」：无思考数据时改为指示模型就内容给建议（`thinkingTimeFeedback` 是 schema 必填，不能让它输出空）；无语音数据时明确写「作答方式不是评分依据」
+  - 埋点：`durationSec` **保持原义（说话秒数）** 不变以免 Supabase 同名列前后两种口径，另加 `answerSec`。附带收益是分析侧终于能直接区分键盘/语音
+  - **实测验证（同一份回答，各跑 3 次真实 API）**：
+
+    | | 三次得分 | 均值 | 极差 |
+    |---|---|---|---|
+    | 键盘 | 78, 79, 86 | **81.0** | 8 |
+    | 语音 | 78, 85, 82 | **81.7** | 7 |
+
+    LLM 自身的重跑方差约 8 分，而键盘与语音的系统性差异是 **0.7 分**——与 0 无法区分。**修复前实测差 40 分（42 vs 82）**，即惩罚是被消除而非缩小。反馈文本中不再出现「仓促」「互动深度」「0 秒」等任何计时类判词
+  - [ ] ⚠️ **UI 那三处改动未做可视化走查** —— 本环境的浏览器面板是无头的（`visibilityState: hidden`、视口 0×0），只做了类型检查与逻辑核对。**建议你在自己的 Chrome 上纯键盘走一题**，确认「用时」正常走秒、「进度」随时长变化、语速显示「—」
 - [x] ~~**出题的 `category` 枚举仍是硬编码技术味标签（P1）**~~ —— 已在 v0.13.1 修复
 
 ## 🆕 v0.14.0 第一批（2026-08-12）· hybrid ASR 模式层 ✅
