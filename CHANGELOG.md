@@ -27,9 +27,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **fail closed 实测**：表尚未建时，cloud 请求返回 503 `budget_unavailable`，日志为 `[transcribe] spend counter unavailable — refusing (fail closed)`，且**未发生任何供应商调用**——即没有花钱
 - **mock 豁免实测**：同样条件下 200 正常返回、`corrections: 0`，不受缺表影响
 
+- **超限拒绝实测**（限额临时设 25 秒、音频 19.9 秒）：第 1 次累计 20 ≤ 25 → 200 并真实调用讯飞；第 2、3 次累计 40 / 60 > 25 → **429 `budget_exhausted`**，上限持续生效。计数器停在 60（=20×3），**证实被拒请求同样计数**（reserve-before、不退还，与设计一致）
+  - **被拒 292/382ms vs 放行 2660ms** —— 这个延迟差坐实了被拒时根本没调供应商，即没有花钱
+  - 日志按预期给出运维可读的 `daily audio budget exhausted: 40s > 25s`
+
 ### Pending
-- 🔴 **需要在 Supabase 执行一次 `docs/supabase-asr-usage.sql`**。在此之前，付费供应商下该路由会持续 fail closed——这是刻意的，不是 bug
-- **「超限 → 429」那条路径尚未实测**，需要表存在才能触发
 - ⚠️ **先确认讯飞账户的计费模式**：若是**后付费**，供应商侧没有硬上限，应用侧这层就是唯一防线；若是**预付费套餐**，套餐本身也构成一道界
 
 ---
