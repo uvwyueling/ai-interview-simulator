@@ -132,8 +132,19 @@ export default function VoiceModeDialog({
                   识别中文里夹的英文、数字和专业名词更稳定。
                 </p>
                 <p className="mt-1 text-[12px] leading-relaxed text-slate-500">
-                  在浏览器识别之外，<span className="text-slate-700">额外</span>把一份压缩音频发给高精度识别服务；
-                  仅用于生成本次转写，完成或失败后立即丢弃，本产品不保存、不用于训练。
+                  在浏览器识别之外，<span className="text-slate-700">额外</span>把一份压缩音频上传给
+                  <span className="text-slate-700">科大讯飞</span>的转写服务。
+                  <span className="text-slate-700">本产品不保存这份音频</span>，但它会存放在讯飞的服务器上，
+                  转写结果在其侧保留 7 天。详见
+                  <a
+                    href="/privacy"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline underline-offset-2 hover:text-slate-700"
+                  >
+                    隐私说明
+                  </a>
+                  。
                 </p>
               </div>
             </div>

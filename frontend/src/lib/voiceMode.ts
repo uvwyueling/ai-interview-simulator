@@ -21,14 +21,20 @@ export type VoiceMode = "browser" | "cloud";
 export const DEFAULT_VOICE_MODE: VoiceMode = "browser";
 
 /**
- * The `_v1` suffix is load-bearing, not decoration.
+ * The version suffix is load-bearing, not decoration.
  *
- * When the default flips to "cloud", the disclosure a user consented to will
- * have changed. Bumping this to `_v2` re-asks everyone honestly instead of
- * silently re-interpreting a past click on "browser only" as consent to upload.
- * Do not "clean up" the suffix.
+ * Bumped v1 → v2 on 2026-08-27, when the vendor was named and the disclosure
+ * was corrected. Under v1 the copy said the audio was held in memory only and
+ * never used for training — but 讯飞's API requires uploading the file to their
+ * servers, keeps the transcript there for 7 days, and documents neither how long
+ * the audio is kept nor whether it trains anything. Anyone who picked
+ * "high accuracy" agreed to a description that was not true, so their answer
+ * cannot be carried over: re-ask rather than silently reinterpret past consent.
+ *
+ * Bump again on any future change of this kind — a new vendor, or flipping the
+ * default to "cloud". Do not "clean up" the suffix.
  */
-const VOICE_MODE_KEY = "echo_voice_mode_v1";
+const VOICE_MODE_KEY = "echo_voice_mode_v2";
 
 function isVoiceMode(v: unknown): v is VoiceMode {
   return v === "browser" || v === "cloud";

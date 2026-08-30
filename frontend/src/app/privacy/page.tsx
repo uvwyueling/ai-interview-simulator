@@ -61,10 +61,21 @@ export default function PrivacyPage() {
           <p>
             · <span className="font-medium text-slate-800">高准确转写（可选）</span>：
             在上述基础上，<span className="font-medium text-slate-800">额外</span>把一份压缩后的音频
-            发送给高精度识别服务，以便更准确地识别中文里夹杂的英文、数字与专业名词。
-            这份音频<span className="font-medium text-slate-800">仅在内存中处理</span>，
-            转写完成、失败、超时或被你取消后<span className="font-medium text-slate-800">立即丢弃</span>，
-            不写入存储、数据库、日志或错误上报，也不会用于训练。
+            发送给<span className="font-medium text-slate-800">科大讯飞（讯飞开放平台）</span>的
+            语音转写服务，以便更准确地识别中文里夹杂的英文、数字与专业名词。
+          </p>
+          <p>
+            在<span className="font-medium text-slate-800">本产品的服务器上</span>，这份音频
+            仅在内存中处理，转写完成、失败、超时或被你取消后<span className="font-medium text-slate-800">立即丢弃</span>，
+            不写入我们的存储、数据库、日志或错误上报。
+          </p>
+          <p>
+            但需要明确告诉你：<span className="font-medium text-slate-800">讯飞的接口要求先把音频上传到它自己的服务器</span>，
+            没有别的调用方式。按其公开文档，转写结果会在讯飞侧
+            <span className="font-medium text-slate-800">保留 7 天</span>；
+            而音频文件保留多久、是否用于模型训练，
+            <span className="font-medium text-slate-800">其文档未作说明，我们无法代它承诺</span>。
+            如果你不希望音频离开本机，请使用默认的「仅浏览器转写」。
           </p>
         </Section>
 
@@ -91,7 +102,13 @@ export default function PrivacyPage() {
 
         <Section title="我们不做什么">
           <p>
-            不需要注册账号 · 不存储简历原文 · 不长期保存音频（仅在内存中处理，转写后立即丢弃） · 不将你的数据用于 AI 训练 · 不向第三方出售数据。
+            不需要注册账号 · 不存储简历原文 · <span className="font-medium text-slate-800">我们自己不保存音频</span>
+            （仅在内存中处理，转写后立即丢弃） · 我们不用你的数据训练模型 · 不向第三方出售数据。
+            <br />
+            <span className="text-[13px] text-slate-500">
+              注：以上是<span className="font-medium text-slate-600">我们</span>的承诺。选择「高准确转写」时，
+              音频会经由讯飞处理，其保存与使用方式见上方「语音作答」一节。
+            </span>
           </p>
         </Section>
 
@@ -99,7 +116,9 @@ export default function PrivacyPage() {
           <p>
             · <span className="font-medium text-slate-800">DeepSeek API</span>：生成面试题与反馈。<br />
             · <span className="font-medium text-slate-800">浏览器内置语音识别服务</span>：语音转文字（Chrome 为 Google 的识别服务）。<br />
-            · <span className="font-medium text-slate-800">高精度识别服务</span>：仅在你选择「高准确转写」时使用；供应商确定后会在此列明。<br />
+            · <span className="font-medium text-slate-800">科大讯飞（讯飞开放平台）</span>：语音转文字，
+            <span className="font-medium text-slate-800">仅在你选择「高准确转写」时使用</span>。
+            音频会上传至其服务器，转写结果在其侧保留 7 天。<br />
             · <span className="font-medium text-slate-800">Supabase</span>：保存匿名使用统计。<br />
             · <span className="font-medium text-slate-800">Vercel</span>：应用托管。<br />
             · <span className="font-medium text-slate-800">Google Ads</span>：衡量广告效果。如果你是通过 Google 广告
