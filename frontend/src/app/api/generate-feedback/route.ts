@@ -54,6 +54,13 @@ export type Feedback = z.infer<typeof FeedbackSchema>;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+/**
+ * Only ever called with a genuinely measured value — buildTimingNote filters
+ * `ms <= 0` first. That guard is load-bearing: 0 used to mean BOTH "measured
+ * zero" and "never measured", so a keyboard answer fell into the `s < 3` branch
+ * and the model was told the candidate had been 「过于仓促」 — a criticism of
+ * something that was never observed.
+ */
 function thinkingTimeGuidance(ms: number): string {
   const s = ms / 1000;
   if (s < 3) {
@@ -68,8 +75,36 @@ function thinkingTimeGuidance(ms: number): string {
 /** Per-call timing data — lives in the USER message so the SYSTEM prompt stays
  *  byte-stable and qualifies for prompt caching across the session's 3 calls. */
 function buildTimingNote(thinkingTimeMs: number, speakingTimeMs: number): string {
-  const speakingSec = (speakingTimeMs / 1000).toFixed(0);
-  return `【计时数据】\n- ${thinkingTimeGuidance(thinkingTimeMs)}\n- 候选人本题总回答时长：${speakingSec} 秒（含所有追问回合）`;
+  const lines: string[] = [];
+
+  // ── Absent data must never be presented as measured data ──────────────────
+  // Both of these arrive as 0 when the user typed instead of speaking. Passing
+  // them through as numbers made the model invent two criticisms — 「思考时间
+  // 不足 3 秒」 and 「总回答时长 0 秒」 — which measurably cost real users ~40
+  // points on the same answer. Say "not available" and forbid the inference.
+  if (thinkingTimeMs > 0) {
+    lines.push(`- ${thinkingTimeGuidance(thinkingTimeMs)}`);
+  } else {
+    // thinkingTimeFeedback is a REQUIRED field in the schema, so the instruction
+    // has to redirect the model to something else, not tell it to stay silent.
+    lines.push(
+      "- 本题没有可用的思考时间数据。请不要对候选人的思考节奏作任何推断或评价，" +
+        "在 thinkingTimeFeedback 中改为就回答内容本身给出一条具体建议。"
+    );
+  }
+
+  if (speakingTimeMs > 0) {
+    lines.push(
+      `- 候选人本题总回答时长：${(speakingTimeMs / 1000).toFixed(0)} 秒（含所有追问回合）`
+    );
+  } else {
+    lines.push(
+      "- 本题为键盘作答，没有语音时长数据。请勿据此评价语速、表达节奏或互动深度——" +
+        "作答方式（打字或语音）不是评分依据，请仅根据回答内容评估。"
+    );
+  }
+
+  return `【计时数据】\n${lines.join("\n")}`;
 }
 
 // Static system prompt → eligible for prompt caching (cache_control below). All

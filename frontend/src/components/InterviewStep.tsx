@@ -143,7 +143,10 @@ export default function InterviewStep() {
   const [recording, setRecording] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [interimTranscript, setInterimTranscript] = useState("");
-  const [seconds, setSeconds] = useState(0);
+  /** Voice only — ticks while `recording`. 0 for a typed answer. */
+  const [speakingSeconds, setSpeakingSeconds] = useState(0);
+  /** Wall clock for the current question. Ticks regardless of how the user answers. */
+  const [answerSeconds, setAnswerSeconds] = useState(0);
   const [speechError, setSpeechError] = useState("");
 
   const recognitionRef = useRef<SpeechRecognition | null>(null);
@@ -198,7 +201,8 @@ export default function InterviewStep() {
   useEffect(() => {
     setTranscript("");
     setInterimTranscript("");
-    setSeconds(0);
+    setSpeakingSeconds(0);
+    setAnswerSeconds(0);
     setRecording(false);
     questionStartRef.current = Date.now();
     thinkingTimeMsRef.current = 0;
@@ -212,7 +216,8 @@ export default function InterviewStep() {
     if (pendingFollowUpQuestion !== null) {
       setTranscript("");
       setInterimTranscript("");
-      setSeconds(0);
+      setSpeakingSeconds(0);
+    setAnswerSeconds(0);
       setRecording(false);
       questionStartRef.current = Date.now();
       thinkingTimeMsRef.current = 0;
@@ -234,9 +239,27 @@ export default function InterviewStep() {
 
   useEffect(() => {
     if (!recording) return;
-    const id = setInterval(() => setSeconds((s) => s + 1), 1000);
+    const id = setInterval(() => setSpeakingSeconds((s) => s + 1), 1000);
     return () => clearInterval(id);
   }, [recording]);
+
+  /**
+   * Wall clock for the question, running whether or not the user is speaking.
+   *
+   * DERIVED from questionStartRef rather than incremented: a self-incrementing
+   * counter drifts whenever the interval is throttled or delayed, and this value
+   * is what the UI shows the user as 「用时」.
+   *
+   * Keyed on currentQuestion.id so it restarts with each question — the ref is
+   * already reset at all four reset sites, so this only needs to re-subscribe.
+   */
+  useEffect(() => {
+    setAnswerSeconds(0);
+    const tick = () =>
+      setAnswerSeconds(Math.floor((Date.now() - questionStartRef.current) / 1000));
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [currentQuestion.id, currentExchanges.length]);
 
   // ── Speech recognition ──
 
@@ -393,10 +416,22 @@ export default function InterviewStep() {
 
   // ── Handlers ──
 
-  const toggleRec = () => {
-    if (!recording && thinkingTimeMsRef.current === 0) {
+  /**
+   * Thinking time ends at the first sign the user is answering — pressing record
+   * OR typing the first character. It used to be set only in toggleRec, so a
+   * keyboard-only answer kept thinkingTimeMs at 0 and the feedback prompt read
+   * that as 「思考时间不足 3 秒」, i.e. invented a criticism.
+   *
+   * Idempotent: only the first call in a question wins.
+   */
+  const markThinkingDone = () => {
+    if (thinkingTimeMsRef.current === 0) {
       thinkingTimeMsRef.current = Date.now() - questionStartRef.current;
     }
+  };
+
+  const toggleRec = () => {
+    if (!recording) markThinkingDone();
     if (recording) {
       setInterimTranscript("");
     } else {
@@ -419,7 +454,8 @@ export default function InterviewStep() {
   const resetAnswer = () => {
     setTranscript("");
     setInterimTranscript("");
-    setSeconds(0);
+    setSpeakingSeconds(0);
+    setAnswerSeconds(0);
     setRecording(false);
     questionStartRef.current = Date.now();
     thinkingTimeMsRef.current = 0;
@@ -536,7 +572,8 @@ export default function InterviewStep() {
     const answer: Answer = {
       questionId: currentQuestion.id,
       transcript: text,
-      durationSeconds: seconds,
+      answerSeconds,
+      speakingSeconds,
       thinkingTimeMs: thinkingTimeMsRef.current,
     };
     const exchange: Exchange = { question: currentQuestion, answer };
@@ -546,7 +583,8 @@ export default function InterviewStep() {
       mainIndex: currentMainIndex,
       isFollowUp,
       depth: followUpDepth,
-      durationSec: seconds,
+      durationSec: speakingSeconds,
+      answerSec: answerSeconds,
       answerLen: text.replace(/\s/g, "").length, // length only — never the content
       asrChars: asrCharsRef.current, // chars from voice → 转写编辑率 = 1 - asrChars/answerLen
       isDemo,
@@ -560,7 +598,8 @@ export default function InterviewStep() {
     // but we also reset manually here to avoid any flash)
     setTranscript("");
     setInterimTranscript("");
-    setSeconds(0);
+    setSpeakingSeconds(0);
+    setAnswerSeconds(0);
     setRecording(false);
     questionStartRef.current = Date.now();
     thinkingTimeMsRef.current = 0;
@@ -580,8 +619,14 @@ export default function InterviewStep() {
 
   const fullText = recording ? transcript + interimTranscript : transcript;
   const wordCount = fullText.replace(/\s/g, "").length;
-  const wordsPerMin = seconds > 0 ? Math.round((wordCount / seconds) * 60) : 0;
-  const thinkRing = Math.min(seconds / 120, 1);
+  // Words-per-minute is a SPEAKING measure — meaningless for a typed answer, so
+  // it stays on the speaking clock and is only rendered when there was speech.
+  const wordsPerMin =
+    speakingSeconds > 0 ? Math.round((wordCount / speakingSeconds) * 60) : 0;
+  const hasSpoken = speakingSeconds > 0;
+  // Everything the user reads as "how long have I been on this question" uses
+  // the wall clock, so a keyboard answer no longer shows 00:00 for minutes.
+  const thinkRing = Math.min(answerSeconds / 120, 1);
 
   const isLastMain = currentMainIndex >= questions.length - 1;
   const canSubmit = !!fullText.trim() && !isJudging;
@@ -872,7 +917,7 @@ export default function InterviewStep() {
                     <div>
                       <div className="text-[11px] text-slate-400 uppercase tracking-wide">用时</div>
                       <div className="text-[18px] font-mono font-medium tabular-nums text-slate-900">
-                        {fmt(seconds)}
+                        {fmt(answerSeconds)}
                       </div>
                     </div>
                   </div>
@@ -880,9 +925,9 @@ export default function InterviewStep() {
                   <div>
                     <div className="text-[11px] text-slate-400 uppercase tracking-wide">进度</div>
                     <div className="text-[18px] font-mono font-medium tabular-nums text-slate-900">
-                      {seconds < 15 ? (
+                      {answerSeconds < 15 ? (
                         <span className="text-emerald-600">充足</span>
-                      ) : seconds < 90 ? (
+                      ) : answerSeconds < 90 ? (
                         <span>正常</span>
                       ) : (
                         <span className="text-amber-600">建议收尾</span>
@@ -1056,7 +1101,10 @@ export default function InterviewStep() {
           ) : (
             <textarea
               value={transcript}
-              onChange={(e) => setTranscript(e.target.value)}
+              onChange={(e) => {
+                markThinkingDone();
+                setTranscript(e.target.value);
+              }}
               placeholder={
                 currentExchanges.length > 0
                   ? "在此输入对追问的回答…"
@@ -1078,14 +1126,22 @@ export default function InterviewStep() {
               <div className="bg-slate-50/60 rounded-lg py-2.5">
                 <div className="text-[10px] text-slate-400 uppercase tracking-wide">语速</div>
                 <div className="text-[15px] font-mono font-medium tabular-nums text-slate-800">
-                  {wordsPerMin}
-                  <span className="text-[10px] text-slate-400 ml-0.5">字/分</span>
+                  {/* A typed answer has no speaking rate; showing 0 字/分 reads as
+                      "you spoke very slowly" rather than "not applicable". */}
+                  {hasSpoken ? (
+                    <>
+                      {wordsPerMin}
+                      <span className="text-[10px] text-slate-400 ml-0.5">字/分</span>
+                    </>
+                  ) : (
+                    <span className="text-slate-300">—</span>
+                  )}
                 </div>
               </div>
               <div className="bg-slate-50/60 rounded-lg py-2.5">
                 <div className="text-[10px] text-slate-400 uppercase tracking-wide">用时</div>
                 <div className="text-[15px] font-mono font-medium tabular-nums text-slate-800">
-                  {fmt(seconds)}
+                  {fmt(answerSeconds)}
                 </div>
               </div>
             </div>

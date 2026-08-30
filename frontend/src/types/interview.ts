@@ -33,7 +33,20 @@ export type Question = {
 export type Answer = {
   questionId: string;
   transcript: string;
-  durationSeconds: number;
+  /**
+   * Wall clock, from the question appearing to submit. Always > 0 regardless of
+   * how the answer was given.
+   */
+  answerSeconds: number;
+  /**
+   * Voice only. 0 means the user TYPED — not that they spoke for zero seconds.
+   *
+   * The two were once a single `durationSeconds`, which let a keyboard answer
+   * reach the feedback prompt as 「本题总回答时长：0 秒」 and cost real users
+   * ~40 points. Keep them apart: nothing downstream may read a duration without
+   * first deciding which of the two it means.
+   */
+  speakingSeconds: number;
   thinkingTimeMs: number;
 };
 
