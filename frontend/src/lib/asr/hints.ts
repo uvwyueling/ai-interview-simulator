@@ -12,7 +12,13 @@
  * The Chinese half is a frequency heuristic with a stoplist, not NLP. That's why
  * `hintCount` is tracked — so its contribution is visible rather than assumed.
  */
-import { MAX_HINTS, MAX_HINT_LEN, MAX_HINTS_CHARS } from "./limits";
+import {
+  CJK_HINT_FLOOR,
+  LATIN_HINT_FLOOR,
+  MAX_HINTS,
+  MAX_HINT_LEN,
+  MAX_HINTS_CHARS,
+} from "./limits";
 
 /** Common English that carries no recognition value. */
 const LATIN_STOP = new Set([
@@ -154,14 +160,40 @@ export function extractHints(resume: string, jd: string, question: string): stri
     cjkPicked.push(term);
   }
 
-  // ── Merge under the caps ──
+  // ── Merge under the caps, giving BOTH consumers a floor ──
+  //
+  // This used to be one queue with Latin first and no count limit, so the eight
+  // Chinese terms could all be squeezed out. Before the vendor was live that was
+  // merely a sort order; now it is a defect — the Chinese half is the only part
+  // with a measured effect on recognition (`dhw`), while the Latin half feeds
+  // the corrector. Starving either one silently disables a feature.
+  const latinTerms = latinRanked.map((x) => x.term);
   const out: string[] = [];
   let chars = 0;
-  for (const term of [...latinRanked.map((x) => x.term), ...cjkPicked]) {
-    if (out.length >= MAX_HINTS) break;
-    if (chars + term.length + 1 > MAX_HINTS_CHARS) break;
+  const take = (term: string): boolean => {
+    if (out.length >= MAX_HINTS) return false;
+    if (chars + term.length + 1 > MAX_HINTS_CHARS) return false;
     out.push(term);
     chars += term.length + 1;
+    return true;
+  };
+
+  let ci = 0;
+  let li = 0;
+  // Floors first — whichever side is ranked higher must not consume the other's
+  // reserved slots.
+  while (ci < Math.min(CJK_HINT_FLOOR, cjkPicked.length)) {
+    if (!take(cjkPicked[ci])) break;
+    ci++;
   }
+  while (li < Math.min(LATIN_HINT_FLOOR, latinTerms.length)) {
+    if (!take(latinTerms[li])) break;
+    li++;
+  }
+  // Then whatever room is left, Latin first: it has the longer tail, and the
+  // Chinese side is already capped at MAX_CJK_HINTS.
+  while (li < latinTerms.length && take(latinTerms[li])) li++;
+  while (ci < cjkPicked.length && take(cjkPicked[ci])) ci++;
+
   return out;
 }

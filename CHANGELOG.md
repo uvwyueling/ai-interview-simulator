@@ -6,6 +6,36 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.14.0] — 2026-08-27 · hybrid ASR 第三批第 3+4 节（纠正词典 + 热词分流）
+
+> 两节合并做，因为它们是**同一份 hints 列表的两个消费者**：中文半边送讯飞 `dhw` 热词，拉丁半边喂纠正词典，而两者共享同一个配额。先做任一节都会被另一节改动。
+
+### Added
+- **`lib/asr/correct.ts`** —— 用简历/JD 词表对云端转写做确定性拼写纠正。实测发现讯飞把夹带的英文**听得基本正确，但写错了大小写与词边界**（`deep seek`、`CRD t`、`g MV`、`media recorder`、`next点js`）——这不是识别失败而是拼写失败，而正确拼写我们本来就有
+  - **只在「整段拉丁连续段完全匹配」时替换**。有实测依据：真人录音里每个错误都恰好是一个完整的拉丁段，因为两侧都是中文；而「段内查子串」会让更短的 hint 从 `typescript` 内部命中
+  - 连接符包含空格 / `.` / `/` / `-` / `_`，**以及口述「点」产生的 `点`**
+  - **不做模糊匹配**：`veral` ← Vercel 音近，精确匹配够不着，但模糊匹配同样会改写用户**说对了**的词——而这一层存在的全部意义就是别让产品断言没说过的话。同理排除中文词：中文没有词边界，在散文里匹配两三字的词有可能损坏用户即将提交的回答
+  - **仅对 `providerClass === "cloud"` 生效**，`mock` 按设计原样返回初稿，纠正它会污染零成本验收路径
+- **埋点 `corrections`** —— `asrUpgradeDistance` 衡量初稿→最终，纠正也计入其中，于是那个数字**同时包含供应商的识别增益和我们免费的确定性纠正**。而「讯飞值不值得付费」只能由前者回答，所以两者必须能拆开
+
+### Changed
+- **`extractHints` 的配额改为两侧各有保底**（`CJK_HINT_FLOOR=8` / `LATIN_HINT_FLOOR=15`）—— 旧实现是单队列、拉丁在前且无数量上限。在供应商上线前这只是排序偏好；之后它是缺陷：中文是唯一被证明对识别有效的输入（`dhw`），却可能被只服务于纠正器的拉丁词全部挤出
+  - **实测饥饿是真实的，但只在拉丁密集的简历上发生**：技术岗与营销岗两套真实简历下新旧完全一致（中文都是 8 席）；而一份罗列约 50 项技术栈的全栈简历，改动前中文**一席都拿不到**，改动后恢复 8 席
+- **`MAX_HINTS_CHARS` 的注释重写** —— 原文说理由是「Whisper 家族 prompt 约 224 token」，供应商换成讯飞后这个理由不成立，且这份列表现在服务两个消费者
+
+### Verified
+- `npm run build` 通过
+- **纠正词典对真人录音转写**：6/6 目标全中
+- **真实讯飞调用端到端**：`corrections = 7`、`providerClass = cloud`、`latencyMs = 1645`；`next js`→`Next.js`、`typescript`→`TypeScript`、`deep seek`→`DeepSeek`、`supabase`→`Supabase`、`CRD t`→`CRDT`、`g MV`→`GMV`、`roi`→`ROI`
+- **三道守卫**：假阳性对照（无词典词的文本 `corrections=0` 且逐字不变）／短词守卫（`ai`/`js` 不进词典）／内部命中守卫（`Types` 不从 `typescript` 内部触发）
+- **mock 回归**：`corrections=0`，含 `deep seek` / `CRD t` 的初稿原样返回
+
+### Notes
+- **更正一处此前的记录**：`sup base` → `Supabase` **修不了**。它归一化为 `supbase` 而 `Supabase` 是 `supabase`——ASR 漏了一个字符，属音近错误而非纯分词错误，先前列进「能修」是错的
+- **`A/B` 修不了，根因在抽取不在匹配**：`countLatin` 按 `/` 切分，`A/B` 裂成两个长度 1 的词被丢弃，词典里根本没有它。要修得动 `extractHints` 的切分逻辑
+
+---
+
 ## [0.14.0] — 2026-08-27 · hybrid ASR 第三批第 2 节（接讯飞 provider）
 
 > 供应商从 `mock` 换成真的讯飞 OST（极速录音转写）。至此「高准确转写」第一次真正产生识别增益——在此之前 `asrUpgradeDistance` 恒为 0，因为 mock 原样返回初稿。**生产环境本次不启用**（`ASR_PROVIDER` 不配置），隔离只靠部署配置。

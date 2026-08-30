@@ -67,6 +67,9 @@ export type UpgradeOutcome =
       /** Bytes actually uploaded, i.e. after the MP3 transcode. */
       uploadBytes: number;
       encodeMs: number;
+      /** Deterministic spelling fixes applied server-side on top of the vendor's
+       *  output. Lets asrUpgradeDistance be split into vendor gain vs our own. */
+      corrections: number;
       durationMs: number;
       providerClass: string;
     }
@@ -247,6 +250,7 @@ export function useAnswerAudio(opts: { enabled: boolean }) {
           text?: string;
           upgraded?: boolean;
           providerClass?: string;
+          corrections?: number;
         };
         if (!data.upgraded) return { status: "skipped", reason: "too_short" };
         if (!data.text?.trim()) return { status: "failed", reason: "empty_result", latencyMs };
@@ -258,6 +262,7 @@ export function useAnswerAudio(opts: { enabled: boolean }) {
           bytes: captured.bytes,
           uploadBytes: encoded.bytes,
           encodeMs: Math.round(encoded.encodeMs),
+          corrections: data.corrections ?? 0,
           durationMs: captured.durationMs,
           providerClass: data.providerClass ?? "unknown",
         };

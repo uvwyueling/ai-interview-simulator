@@ -645,6 +645,9 @@ export default function InterviewStep() {
       audioBytes: outcome.bytes,
       uploadBytes: outcome.uploadBytes,
       encodeMs: outcome.encodeMs,
+      // Splits asrUpgradeDistance into vendor gain vs our deterministic pass —
+      // only the former justifies paying the vendor.
+      corrections: outcome.corrections,
       draftLen,
       cloudLen,
       hintCount: hints.length,

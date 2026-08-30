@@ -64,13 +64,26 @@ export const PREFERRED_MIME_TYPES = [
   "audio/mp4",
 ] as const;
 
-// ── Hotword hints ─────────────────────────────────────────────────────────────
-// Caps are load-bearing, not cosmetic: Whisper-family `prompt` bias is capped
-// around 224 tokens, and an over-long hint list silently degrades rather than
-// erroring.
+// ── Glossary hints ────────────────────────────────────────────────────────────
+// ONE list, TWO consumers, and they use disjoint halves of it:
+//   · the CHINESE half → the vendor's `dhw` hotwords (measured: flips 买点 → 埋点)
+//   · the LATIN half   → asr/correct.ts, which fixes case and word boundaries
+// Neither is optional, so the caps below have to leave room for both — see the
+// floors and the merge order in hints.ts.
 export const MAX_HINTS = 30;
 export const MAX_HINT_LEN = 24;
 export const MAX_HINTS_CHARS = 400;
+
+/**
+ * Guaranteed slots, so ranking on one side cannot starve the other.
+ *
+ * This became load-bearing once the two consumers existed. The old merge put
+ * Latin first with no count limit, which meant the Chinese terms — the only
+ * ones with a measured effect on recognition — could be squeezed out entirely
+ * by terms that only ever feed the corrector.
+ */
+export const CJK_HINT_FLOOR = 8;
+export const LATIN_HINT_FLOOR = 15;
 
 /** Guards the route's Zod check on the draft field. */
 export const MAX_DRAFT_CHARS = 4_000;

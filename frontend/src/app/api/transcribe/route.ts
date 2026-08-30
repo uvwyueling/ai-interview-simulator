@@ -3,6 +3,7 @@ import { z } from "zod";
 import { rateLimit, getClientIp } from "@/lib/rateLimit";
 import { getAsrProvider, isAsrConfigured, asrProviderClass } from "@/lib/asr/provider";
 import { AsrError } from "@/lib/asr/types";
+import { correctTranscript } from "@/lib/asr/correct";
 import {
   ALLOWED_AUDIO_TYPES,
   MAX_AUDIO_BYTES,
@@ -155,11 +156,25 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       },
       controller.signal
     );
+    // Deterministic spelling pass over the vendor's output — case and word
+    // boundaries only, using the résumé/JD glossary. Cloud results ONLY: `mock`
+    // returns the draft verbatim by design, and correcting that would pollute
+    // the zero-cost acceptance path.
+    const corrected =
+      result.providerClass === "cloud"
+        ? correctTranscript(result.text, parsed.data.hints)
+        : { text: result.text, corrections: 0 };
+
     return ok({
-      text: result.text,
+      text: corrected.text,
       upgraded: true,
       providerClass: result.providerClass,
       latencyMs: Date.now() - startedAt,
+      // Reported so asrUpgradeDistance can be decomposed. That metric measures
+      // draft → final, which now blends the VENDOR's recognition gain with our
+      // own free correction — and only the former can answer "is the vendor
+      // worth paying for".
+      corrections: corrected.corrections,
     });
   } catch (err) {
     const code = err instanceof AsrError ? err.code : "unknown";
