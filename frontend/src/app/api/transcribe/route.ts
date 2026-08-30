@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { rateLimit, getClientIp } from "@/lib/rateLimit";
+import { addAsrSeconds } from "@/lib/db";
 import { getAsrProvider, isAsrConfigured, asrProviderClass } from "@/lib/asr/provider";
 import { AsrError } from "@/lib/asr/types";
 import { correctTranscript } from "@/lib/asr/correct";
@@ -14,6 +15,7 @@ import {
   MIN_AUDIO_BYTES,
   MIN_AUDIO_MS,
   SERVER_PROVIDER_TIMEOUT_MS,
+  DEFAULT_ASR_DAILY_SECONDS,
 } from "@/lib/asr/limits";
 
 // formData() / arrayBuffer() need the Node runtime; never cache a request that
@@ -138,6 +140,40 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (!provider) {
     // Soft fallback, not an error the user should see as a failure.
     return fail({ status: 503, code: "unavailable", error: "高准确转写暂不可用，已保留浏览器转写结果" });
+  }
+
+  // ── Spend cap ──────────────────────────────────────────────────────────────
+  // Only for providers that actually cost money. `mock` must stay runnable with
+  // no Supabase and no table, or the zero-cost acceptance path acquires a
+  // database dependency it has no reason to have.
+  //
+  // Counted in AUDIO SECONDS because that is the billing unit, and counted
+  // BEFORE the call: reserving is the conservative direction, and the shared
+  // counter (not the in-memory rateLimit above) is what makes this a real
+  // bound across instances and cold starts.
+  if (provider.providerClass === "cloud") {
+    const limit =
+      Number(process.env.ASR_DAILY_SECONDS_LIMIT) || DEFAULT_ASR_DAILY_SECONDS;
+    const usedToday = await addAsrSeconds(parsed.data.durationMs / 1000);
+    if (usedToday === null) {
+      // FAIL CLOSED. A cap that lapses whenever its dependency is down is not a
+      // cap — and outages tend to coincide with the abuse it exists to stop.
+      console.error("[transcribe] spend counter unavailable — refusing (fail closed)");
+      return fail({
+        status: 503,
+        code: "budget_unavailable",
+        error: "高准确转写暂不可用，已保留浏览器转写结果",
+      });
+    }
+    if (usedToday > limit) {
+      // Operator-facing: the only place today's ceiling becomes visible.
+      console.warn(`[transcribe] daily audio budget exhausted: ${usedToday}s > ${limit}s`);
+      return fail({
+        status: 429,
+        code: "budget_exhausted",
+        error: "今日高准确转写用量已达上限，已保留浏览器转写结果",
+      });
+    }
   }
 
   const controller = new AbortController();

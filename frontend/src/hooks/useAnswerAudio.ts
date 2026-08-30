@@ -52,6 +52,8 @@ export type UpgradeFailReason =
   | "http_4xx"
   | "http_5xx"
   | "empty_result"
+  /** We refused on volume: the per-IP limiter or the daily spend cap. */
+  | "rate_limited"
   | "user_skip"
   /** The webm→MP3 transcode failed, so there was nothing the provider accepts. */
   | "encode_failed"
@@ -240,9 +242,14 @@ export function useAnswerAudio(opts: { enabled: boolean }) {
         setPhase("idle");
 
         if (!res.ok) {
+          // 429 is split out deliberately: it means we refused on volume — the
+          // per-IP limiter or the daily spend cap. Folding that into http_4xx
+          // would make the one failure mode that costs money invisible in the
+          // funnel.
           return {
             status: "failed",
-            reason: res.status >= 500 ? "http_5xx" : "http_4xx",
+            reason:
+              res.status === 429 ? "rate_limited" : res.status >= 500 ? "http_5xx" : "http_4xx",
             latencyMs,
           };
         }

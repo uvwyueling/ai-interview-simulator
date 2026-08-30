@@ -100,3 +100,38 @@ export async function eventCounts(): Promise<Record<string, number> | null> {
 export function isConfigured(): boolean {
   return !!(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY);
 }
+
+// ── Cloud-ASR spend cap ──────────────────────────────────────────────────────
+// Deliberately NOT the graceful-degradation pattern used above. Analytics may
+// silently no-op, because a lost event costs nothing. This counter guards a
+// route billed per second of audio, so an unavailable counter must FAIL CLOSED
+// — an upper bound that stops applying whenever its dependency is down is not
+// an upper bound, and dependency outages tend to coincide with abuse.
+//
+// Requires docs/supabase-asr-usage.sql to have been run once.
+
+/**
+ * Atomically add `seconds` to today's total and return the NEW total.
+ * Returns null if the counter is unreachable — callers must treat that as
+ * "refuse", never as zero.
+ *
+ * The increment happens BEFORE the vendor call and is never refunded on
+ * failure. Over-counting is the safe direction here: audio has already been
+ * uploaded by then, and a burst of provider failures is exactly when you want
+ * spending to stop rather than retry freely.
+ */
+export async function addAsrSeconds(seconds: number): Promise<number | null> {
+  const client = getClient();
+  if (!client) return null;
+  const day = new Date().toISOString().slice(0, 10); // UTC day
+  const { data, error } = await client.rpc("asr_usage_add", {
+    p_day: day,
+    p_seconds: Math.max(0, Math.round(seconds)),
+  });
+  if (error) {
+    // Message only — this never carries user content.
+    console.error("[db] asr_usage_add failed:", error.message);
+    return null;
+  }
+  return typeof data === "number" ? data : Number(data);
+}

@@ -89,6 +89,17 @@ export const LATIN_HINT_FLOOR = 15;
 export const MAX_DRAFT_CHARS = 4_000;
 
 /**
+ * Default ceiling on cloud-ASR audio per UTC day, in seconds. Overridable via
+ * `ASR_DAILY_SECONDS_LIMIT` (read in the route — this file stays env-free).
+ *
+ * 3600s = one hour of audio ≈ a handful of RMB/day at the vendor's per-hour
+ * tiers. Deliberately LOW as a default: forgetting to configure it should cost
+ * a capped amount and degrade to browser-only, not run up a bill. Raise it
+ * consciously once real usage is known.
+ */
+export const DEFAULT_ASR_DAILY_SECONDS = 3_600;
+
+/**
  * A "successful" cloud result shorter than this fraction of the draft is treated
  * as suspicious and discarded in favour of the draft. Protects against the worst
  * failure mode — a truncated result wiping most of an answer — at the cost of

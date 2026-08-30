@@ -6,6 +6,34 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.14.0] — 2026-08-27 · 云端 ASR 的成本硬上限
+
+> 生产启用云端 ASR 的最后一道前置。现有 `rateLimit` 是内存实现、冷启动即重置、serverless 每实例一份——对一个按音频秒数计费的路由，那是尽力而为，不是上限。
+
+### Added
+- **`docs/supabase-asr-usage.sql`** —— `asr_usage(day, seconds)` 表 + `asr_usage_add()` 原子递增函数。**用现有的 Supabase，不引新供应商、不加新凭据**（数据库访问本来就已隔离在 `lib/db.ts`）
+  - **必须是数据库函数而不是「先 select 再 update」**：并发请求下读改写会互相覆盖，而这里少算的每一秒都是真金白银。`upsert … returning` 让递增与读取在同一条语句里完成
+  - 表启用 RLS 且不建任何 policy——只有绕过 RLS 的 service-role key 能读写，而它只在服务端路由里使用
+- **`db.addAsrSeconds()`** —— 与该文件其余部分**刻意相反**的错误处理：埋点可以静默 no-op（丢一条事件不花钱），而这个计数器守的是花钱的路由，读不到必须 fail closed
+- **`ASR_DAILY_SECONDS_LIMIT`** —— 单位是**音频秒数**（计费单位），不是请求数。未设时默认 3600（一小时音频/天）。**默认刻意设低**：忘了配置应该只花掉一个有界的量，而不是攒出一张账单
+
+### Changed
+- **`/api/transcribe` 在调用供应商前计数，且失败不退还** —— 音频那时已经上传了，而供应商连续报错正是最该停止花钱的时刻，不是该自由重试的时刻
+- **只对 `providerClass === "cloud"` 生效** —— `mock` 完全豁免，不计数也不需要建表。否则零成本验收路径会平白获得一个数据库依赖
+- **客户端把 429 单列为 `rate_limited`**，不再并进 `http_4xx` —— 唯一会花钱的失败模式不该在漏斗里隐形
+
+### Verified
+- `npm run build` 通过
+- **fail closed 实测**：表尚未建时，cloud 请求返回 503 `budget_unavailable`，日志为 `[transcribe] spend counter unavailable — refusing (fail closed)`，且**未发生任何供应商调用**——即没有花钱
+- **mock 豁免实测**：同样条件下 200 正常返回、`corrections: 0`，不受缺表影响
+
+### Pending
+- 🔴 **需要在 Supabase 执行一次 `docs/supabase-asr-usage.sql`**。在此之前，付费供应商下该路由会持续 fail closed——这是刻意的，不是 bug
+- **「超限 → 429」那条路径尚未实测**，需要表存在才能触发
+- ⚠️ **先确认讯飞账户的计费模式**：若是**后付费**，供应商侧没有硬上限，应用侧这层就是唯一防线；若是**预付费套餐**，套餐本身也构成一道界
+
+---
+
 ## [0.14.0] — 2026-08-27 · 隐私文案实名讯飞
 
 > 生产启用云端 ASR 的前置之一。**必须与「生产配置 provider」同一次部署**——只要生产配了 provider，弹窗就会提供「高准确转写」，用户一选音频就上传了，此时旧文案已经是假的。
